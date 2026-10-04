@@ -26,6 +26,7 @@ export function getDb(): postgres.Sql {
       idle_timeout: 20,
       connect_timeout: 10,
       ssl: "require",
+      onnotice: () => {},
     });
 
     if (process.env.NODE_ENV !== "production") {
