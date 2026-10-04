@@ -44,17 +44,17 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Proxy Connector */}
+              {/* Vercel Services Connector */}
               <div className="rounded-2xl border border-cyan-800/40 bg-cyan-950/10 p-6 backdrop-blur-md relative">
                 <div className="inline-flex rounded-lg bg-cyan-500/10 border border-cyan-500/20 px-2.5 py-1 text-xs font-semibold text-cyan-400 mb-4">
-                  Reverse Proxy
+                  Vercel Services
                 </div>
-                <h3 className="text-lg font-bold text-white">/api → Backend Proxy</h3>
+                <h3 className="text-lg font-bold text-white">/api → Backend Routing</h3>
                 <p className="mt-2 text-sm text-zinc-400 leading-relaxed">
-                  The frontend transparently proxies all <code className="text-cyan-300 font-mono">/api/*</code> traffic to the dedicated backend service, maintaining single-origin cookies and CORS isolation.
+                  <code className="text-cyan-300 font-mono">vercel.json</code> declaratively routes all <code className="text-cyan-300 font-mono">/api/*</code> traffic to the backend service and everything else to the frontend service on the same domain.
                 </p>
                 <div className="mt-4 border-t border-zinc-800/80 pt-4 text-xs font-mono text-cyan-500">
-                  Routing: next.config.ts rewrites
+                  Routing: vercel.json services
                 </div>
               </div>
 

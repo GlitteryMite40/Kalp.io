@@ -8,18 +8,20 @@ Kalp.io is an intelligent tool designed to transform software project ideas and 
 
 ## Architecture & Repo Layout
 
-The repository is structured into two decoupled Next.js projects deployed independently to Vercel:
+The repository is structured into two services deployed under a single Vercel project via `vercel.json` (Services preset):
 
 ```
 Kalp.io/
-├── frontend/    # Next.js (App Router) - UI only; proxies /api requests to backend
-├── backend/     # Next.js (App Router) - API routes only
+├── frontend/    # Next.js (App Router) - UI only; handles /*
+├── backend/     # Next.js (App Router) - API routes only; handles /api/*
+├── vercel.json  # Multi-service configuration & rewrites
 ├── README.md    # Project documentation
 └── .gitignore   # Git ignore rules
 ```
 
-- **`frontend`**: Handles UI interactions, visualization with React Flow, and state management. Proxies `/api/*` to the backend deployment.
+- **`frontend`**: Handles UI interactions, visualization with React Flow, and client state.
 - **`backend`**: Hosts serverless API routes handling validation, LLM orchestration, and Supabase integration.
+- **`vercel.json`**: Declaratively routes `/api/*` to the backend service and all other routes to frontend on the same domain.
 
 ## Tech Stack
 
