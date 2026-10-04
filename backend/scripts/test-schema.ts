@@ -16,6 +16,8 @@ import {
   Requirement,
   Node,
   Edge,
+  findDependsOnCycle,
+  checkGraphIntegrity,
 } from "../src/lib/schema";
 
 interface TestResult {
@@ -898,6 +900,165 @@ function runTests(): void {
       normalized.to_node === "node-2" &&
       !("fromNode" in normalized) &&
       !("toNode" in normalized),
+  );
+
+  // ---------------------------------------------------------------------------
+  // 11. DEPENDS_ON CYCLE DETECTION & GRAPH INTEGRITY HARDENING
+  // ---------------------------------------------------------------------------
+  console.log(
+    "11. Testing DEPENDS_ON Cycle Detection & Graph Integrity Hardening...",
+  );
+
+  // (e) findDependsOnCycle returns null for acyclic graphs and correct ordered path for cyclic ones
+  const acyclicNodes = [
+    { node_key: "01.1" },
+    { node_key: "01.2" },
+    { node_key: "01.3" },
+  ];
+  const acyclicEdges = [
+    { from_node: "01.3", to_node: "01.2", type: "DEPENDS_ON" },
+    { from_node: "01.2", to_node: "01.1", type: "DEPENDS_ON" },
+  ];
+  assert(
+    "findDependsOnCycle returns null for acyclic graphs",
+    findDependsOnCycle(acyclicNodes, acyclicEdges) === null,
+  );
+
+  const cyclicNodes2 = [{ node_key: "01.1" }, { node_key: "01.2" }];
+  const cyclicEdges2 = [
+    { from_node: "01.1", to_node: "01.2", type: "DEPENDS_ON" },
+    { from_node: "01.2", to_node: "01.1", type: "DEPENDS_ON" },
+  ];
+  const cycle2 = findDependsOnCycle(cyclicNodes2, cyclicEdges2);
+  assert(
+    "findDependsOnCycle returns ordered path for length-2 cycle",
+    cycle2 !== null &&
+      (cycle2.join(" -> ") === "01.1 -> 01.2 -> 01.1" ||
+        cycle2.join(" -> ") === "01.2 -> 01.1 -> 01.2"),
+  );
+
+  const cyclicNodes3 = [
+    { node_key: "01.1" },
+    { node_key: "01.2" },
+    { node_key: "01.3" },
+  ];
+  const cyclicEdges3 = [
+    { from_node: "01.1", to_node: "01.2", type: "DEPENDS_ON" },
+    { from_node: "01.2", to_node: "01.3", type: "DEPENDS_ON" },
+    { from_node: "01.3", to_node: "01.1", type: "DEPENDS_ON" },
+  ];
+  const cycle3 = findDependsOnCycle(cyclicNodes3, cyclicEdges3);
+  assert(
+    "findDependsOnCycle returns ordered path for length-3 cycle",
+    cycle3 !== null &&
+      cycle3.length === 4 &&
+      cycle3[0] === cycle3[3] &&
+      (cycle3.join(" -> ") === "01.1 -> 01.2 -> 01.3 -> 01.1" ||
+        cycle3.join(" -> ") === "01.2 -> 01.3 -> 01.1 -> 01.2" ||
+        cycle3.join(" -> ") === "01.3 -> 01.1 -> 01.2 -> 01.3"),
+  );
+
+  // (a) DEPENDS_ON cycle of length 2 and length 3 rejected via GraphSchema, message names the path
+  const graphWithCycle2 = {
+    nodes: [
+      { node_key: "01.1", phase: "01", title: "Task 1" },
+      { node_key: "01.2", phase: "01", title: "Task 2" },
+    ],
+    edges: cyclicEdges2,
+  };
+  const resGraphCycle2 = GraphSchema.safeParse(graphWithCycle2);
+  assert(
+    "Graph with length-2 DEPENDS_ON cycle rejected naming path",
+    resGraphCycle2.success === false &&
+      resGraphCycle2.error.issues.some((i) =>
+        i.message.includes("DEPENDS_ON cycle detected: 01.1 -> 01.2 -> 01.1"),
+      ),
+  );
+
+  const graphWithCycle3 = {
+    nodes: [
+      { node_key: "01.1", phase: "01", title: "Task 1" },
+      { node_key: "01.2", phase: "01", title: "Task 2" },
+      { node_key: "01.3", phase: "01", title: "Task 3" },
+    ],
+    edges: cyclicEdges3,
+  };
+  const resGraphCycle3 = GraphSchema.safeParse(graphWithCycle3);
+  assert(
+    "Graph with length-3 DEPENDS_ON cycle rejected naming path",
+    resGraphCycle3.success === false &&
+      resGraphCycle3.error.issues.some((i) =>
+        i.message.includes(
+          "DEPENDS_ON cycle detected: 01.1 -> 01.2 -> 01.3 -> 01.1",
+        ),
+      ),
+  );
+
+  // (b) Chain with no cycle accepted
+  const chainGraph = {
+    nodes: [
+      { node_key: "01.1", phase: "01", title: "Task 1" },
+      { node_key: "01.2", phase: "01", title: "Task 2" },
+      { node_key: "01.3", phase: "01", title: "Task 3" },
+    ],
+    edges: acyclicEdges,
+  };
+  const resChain = GraphSchema.safeParse(chainGraph);
+  assert("Chain graph with no cycle is accepted", resChain.success === true);
+
+  // (c) Cycle made only of non-DEPENDS_ON edge types accepted
+  const nonDependsOnCycleGraph = {
+    nodes: [
+      { node_key: "01.1", phase: "01", title: "Task 1" },
+      { node_key: "01.2", phase: "01", title: "Task 2" },
+    ],
+    edges: [
+      { from_node: "01.1", to_node: "01.2", type: "TESTS" },
+      { from_node: "01.2", to_node: "01.1", type: "TESTS" },
+    ],
+  };
+  const resNonDependsOn = GraphSchema.safeParse(nonDependsOnCycleGraph);
+  assert(
+    "Cycle made only of non-DEPENDS_ON edge types is accepted",
+    resNonDependsOn.success === true,
+  );
+
+  // (d) Self-edge written as node key to same node's id rejected
+  const selfEdgeKeyToIdGraph = {
+    nodes: [
+      { node_key: "01.1", phase: "01", title: "Task 1", id: VALID_UUID_1 },
+    ],
+    edges: [{ from_node: "01.1", to_node: VALID_UUID_1, type: "DEPENDS_ON" }],
+  };
+  const resSelfEdgeKeyToId = GraphSchema.safeParse(selfEdgeKeyToIdGraph);
+  assert(
+    "Self-edge written as node key to same node id rejected by superRefine",
+    resSelfEdgeKeyToId.success === false &&
+      resSelfEdgeKeyToId.error.issues.some((i) =>
+        i.message.includes("Self-edge is not allowed"),
+      ),
+  );
+
+  // Direct checkGraphIntegrity unit test with options
+  let integrityCustomIssue = false;
+  const dummyCtx = {
+    addIssue: (issue: { message: string }) => {
+      if (issue.message.includes("is missing required requirement_key")) {
+        integrityCustomIssue = true;
+      }
+    },
+  };
+  checkGraphIntegrity(
+    {
+      nodes: [{ node_key: "01.1" }],
+      edges: [],
+    },
+    dummyCtx as never,
+    { requireRequirementKey: true },
+  );
+  assert(
+    "checkGraphIntegrity standalone unit test flags missing requirement_key",
+    integrityCustomIssue,
   );
 
   // ---------------------------------------------------------------------------

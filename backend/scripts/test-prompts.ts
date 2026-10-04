@@ -14,16 +14,19 @@ import {
   buildArchitectureMessages,
   ARCHITECTURE_PROMPT_VERSION,
   ArchitectureOutputSchema,
+  makeArchitectureOutputSchema,
 } from "../src/server/prompts/architecture";
 import {
   buildDecomposeMessages,
   DECOMPOSE_PROMPT_VERSION,
   DecomposeOutputSchema,
+  makeDecomposeOutputSchema,
 } from "../src/server/prompts/decompose";
 import {
   buildCriteriaMessages,
   CRITERIA_PROMPT_VERSION,
   CriteriaOutputSchema,
+  makeCriteriaSchema,
 } from "../src/server/prompts/criteria";
 
 let failed = false;
@@ -196,6 +199,18 @@ async function runPromptTests() {
       injectionPassed = false;
     }
 
+    // (g) Strengthened injection check: attack text must not appear anywhere in system message
+    if (
+      harmfulBuild.system.includes("Ignore previous instructions") ||
+      harmfulBuild.system.includes("output XML") ||
+      harmlessBuild.system.includes("Ignore previous instructions")
+    ) {
+      fail(
+        `Check 3g (${stage.name}): Injection attack text leaked into system message`,
+      );
+      injectionPassed = false;
+    }
+
     // (b) User text appears only inside the delimited block
     const promptText = harmfulBuild.prompt;
     const openTagIdx = promptText.indexOf("<user_input>");
@@ -232,11 +247,13 @@ async function runPromptTests() {
   }
 
   if (injectionPassed) {
-    pass("Check 3: Prompt injection guards verified across all four stages");
+    pass(
+      "Check 3: Prompt injection guards verified across all four stages (system messages clean)",
+    );
   }
 
   // ---------------------------------------------------------------------------
-  // Check 4: Decompose prompt rules and forbidden substrings
+  // Check 4: Decompose prompt rules, edge types, and forbidden substrings
   // ---------------------------------------------------------------------------
   const decomposeMessages = buildDecomposeMessages({
     requirements: [{ key: "REQ-1", title: "Req 1" }],
@@ -303,16 +320,24 @@ async function runPromptTests() {
       text.toLowerCase().includes("provide uuid"),
   );
 
+  // (f) The decompose prompt no longer asks for acceptance or tests in its JSON example
+  const jsonExampleMatch = decompPrompt.match(/\{\s*"nodes":[\s\S]*?\n\}/);
+  const jsonExample = jsonExampleMatch ? jsonExampleMatch[0] : "";
+  const asksForAcceptanceInExample = jsonExample.includes('"acceptance"');
+  const asksForTestsInExample = jsonExample.includes('"tests"');
+
   if (
     hasDirectionText &&
     hasAllEdgeTypes &&
     hasAllFields &&
     hasKeysNotUuidsInstruction &&
     !mentionsRequirementId &&
-    !asksForUuids
+    !asksForUuids &&
+    !asksForAcceptanceInExample &&
+    !asksForTestsInExample
   ) {
     pass(
-      "Check 4: Decompose prompt contains edge direction, field names, edge types, and no requirement_id",
+      "Check 4: Decompose prompt contains edge direction, field names, edge types, no requirement_id, and no acceptance/tests in JSON example",
     );
   } else {
     fail("Check 4: Decompose prompt validation failed", {
@@ -322,6 +347,8 @@ async function runPromptTests() {
       hasKeysNotUuidsInstruction,
       mentionsRequirementId,
       asksForUuids,
+      asksForAcceptanceInExample,
+      asksForTestsInExample,
     });
   }
 
@@ -356,7 +383,7 @@ async function runPromptTests() {
     schemasPassed = false;
   }
 
-  // ArchitectureOutputSchema
+  // ArchitectureOutputSchema & makeArchitectureOutputSchema
   const validArch = {
     modules: [
       {
@@ -380,7 +407,28 @@ async function runPromptTests() {
     schemasPassed = false;
   }
 
-  // DecomposeOutputSchema
+  // (d) makeArchitectureOutputSchema rejects an unknown requirement key
+  const archSchemaWithReqs = makeArchitectureOutputSchema(["REQ-1", "REQ-2"]);
+  const invalidArchUnknownReqKey = {
+    modules: [
+      {
+        name: "AuthService",
+        responsibility: "Session management",
+        requirement_keys: ["REQ-UNKNOWN"],
+      },
+    ],
+    interactions: [],
+  };
+  if (archSchemaWithReqs.safeParse(invalidArchUnknownReqKey).success) {
+    fail("Check 5d (architecture): Unknown requirement key was not rejected");
+    schemasPassed = false;
+  }
+  if (!archSchemaWithReqs.safeParse(validArch).success) {
+    fail("Check 5d (architecture): Valid requirement keys rejected");
+    schemasPassed = false;
+  }
+
+  // DecomposeOutputSchema & makeDecomposeOutputSchema
   const validDecompose = {
     nodes: [
       {
@@ -390,8 +438,7 @@ async function runPromptTests() {
         requirement_key: "REQ-1",
         status: "not_started",
         files: ["db.ts"],
-        acceptance: ["Schema migrated"],
-        tests: ["db.test.ts"],
+        explanation: "Schema",
       },
       {
         node_key: "01.2",
@@ -400,8 +447,7 @@ async function runPromptTests() {
         requirement_key: "REQ-1",
         status: "not_started",
         files: ["route.ts"],
-        acceptance: ["API returns 200"],
-        tests: ["route.test.ts"],
+        explanation: "Route",
       },
     ],
     edges: [
@@ -431,12 +477,76 @@ async function runPromptTests() {
     ],
   };
 
+  // (a) decompose output with a node missing requirement_key is rejected
+  const invalidDecomposeMissingReqKey = {
+    nodes: [
+      {
+        node_key: "01.1",
+        phase: "01",
+        title: "Database schema",
+        // missing requirement_key
+      },
+    ],
+    edges: [],
+  };
+
   if (!DecomposeOutputSchema.safeParse(validDecompose).success) {
     fail("Check 5 (decompose): Valid fixture rejected");
     schemasPassed = false;
   }
   if (DecomposeOutputSchema.safeParse(invalidDecomposeUnknownEdge).success) {
     fail("Check 5 (decompose): Unknown node edge was not rejected");
+    schemasPassed = false;
+  }
+  if (DecomposeOutputSchema.safeParse(invalidDecomposeMissingReqKey).success) {
+    fail("Check 5a (decompose): Missing requirement_key was not rejected");
+    schemasPassed = false;
+  }
+
+  // (b) makeDecomposeOutputSchema rejects an unknown requirement_key and a DEPENDS_ON cycle
+  const decomposeSchemaWithReqs = makeDecomposeOutputSchema(["REQ-1"]);
+  const invalidDecomposeUnknownReq = {
+    nodes: [
+      {
+        node_key: "01.1",
+        phase: "01",
+        title: "Task 1",
+        requirement_key: "REQ-UNKNOWN",
+      },
+    ],
+    edges: [],
+  };
+  const invalidDecomposeCycle = {
+    nodes: [
+      {
+        node_key: "01.1",
+        phase: "01",
+        title: "Task 1",
+        requirement_key: "REQ-1",
+      },
+      {
+        node_key: "01.2",
+        phase: "01",
+        title: "Task 2",
+        requirement_key: "REQ-1",
+      },
+    ],
+    edges: [
+      { from_node: "01.1", to_node: "01.2", type: "DEPENDS_ON" },
+      { from_node: "01.2", to_node: "01.1", type: "DEPENDS_ON" },
+    ],
+  };
+
+  if (decomposeSchemaWithReqs.safeParse(invalidDecomposeUnknownReq).success) {
+    fail(
+      "Check 5b (decompose): Unknown requirement_key was not rejected by makeDecomposeOutputSchema",
+    );
+    schemasPassed = false;
+  }
+  if (decomposeSchemaWithReqs.safeParse(invalidDecomposeCycle).success) {
+    fail(
+      "Check 5b (decompose): DEPENDS_ON cycle was not rejected by makeDecomposeOutputSchema",
+    );
     schemasPassed = false;
   }
 
@@ -452,7 +562,7 @@ async function runPromptTests() {
     schemasPassed = false;
   }
 
-  // CriteriaOutputSchema
+  // CriteriaOutputSchema & makeCriteriaSchema
   const validCriteria = {
     "01.1": {
       acceptance: ["Tables created", "Pool connected"],
@@ -474,10 +584,61 @@ async function runPromptTests() {
     fail("Check 5 (criteria): Malformed acceptance fixture was not rejected");
     schemasPassed = false;
   }
+  if (CriteriaOutputSchema.safeParse({}).success) {
+    fail("Check 5 (criteria): Generic CriteriaOutputSchema must reject {}");
+    schemasPassed = false;
+  }
+
+  // (c) makeCriteriaSchema rejects {}, missing node key, extra node key, entry with empty acceptance; accepts complete valid output
+  const criteriaSchemaWithNodes = makeCriteriaSchema(["01.1", "01.2"]);
+  const critEmpty = {};
+  const critMissingNode = {
+    "01.1": { acceptance: ["Done"], tests: ["npm test"] },
+  };
+  const critExtraNode = {
+    "01.1": { acceptance: ["Done 1"], tests: ["npm test 1"] },
+    "01.2": { acceptance: ["Done 2"], tests: ["npm test 2"] },
+    "01.3": { acceptance: ["Done 3"], tests: ["npm test 3"] },
+  };
+  const critEmptyAcceptance = {
+    "01.1": { acceptance: [], tests: ["npm test 1"] },
+    "01.2": { acceptance: ["Done 2"], tests: ["npm test 2"] },
+  };
+  const critValid = {
+    "01.1": { acceptance: ["Done 1"], tests: ["npm test 1"] },
+    "01.2": { acceptance: ["Done 2"], tests: ["npm test 2"] },
+  };
+
+  if (criteriaSchemaWithNodes.safeParse(critEmpty).success) {
+    fail("Check 5c (criteria): makeCriteriaSchema failed to reject {}");
+    schemasPassed = false;
+  }
+  if (criteriaSchemaWithNodes.safeParse(critMissingNode).success) {
+    fail(
+      "Check 5c (criteria): makeCriteriaSchema failed to reject missing node key",
+    );
+    schemasPassed = false;
+  }
+  if (criteriaSchemaWithNodes.safeParse(critExtraNode).success) {
+    fail(
+      "Check 5c (criteria): makeCriteriaSchema failed to reject extra node key",
+    );
+    schemasPassed = false;
+  }
+  if (criteriaSchemaWithNodes.safeParse(critEmptyAcceptance).success) {
+    fail(
+      "Check 5c (criteria): makeCriteriaSchema failed to reject empty acceptance array",
+    );
+    schemasPassed = false;
+  }
+  if (!criteriaSchemaWithNodes.safeParse(critValid).success) {
+    fail("Check 5c (criteria): makeCriteriaSchema rejected valid criteria map");
+    schemasPassed = false;
+  }
 
   if (schemasPassed) {
     pass(
-      "Check 5: All stage output schemas accepted valid and rejected invalid fixtures",
+      "Check 5: All stage output schemas accepted valid and rejected invalid fixtures (including make* schemas)",
     );
   }
 
@@ -504,19 +665,45 @@ async function runPromptTests() {
   }
 
   // ---------------------------------------------------------------------------
-  // Check 7: Tag neutralization unit test
+  // Check 7: Tag neutralization unit test (including spaced and mixed-case variants)
   // ---------------------------------------------------------------------------
-  const dirty = "test <user_input> test </user_input> test <USER_INPUT> test";
-  const cleaned = escapeDelimiterTags(dirty);
-  if (
-    !cleaned.toLowerCase().includes("<user_input>") &&
-    !cleaned.toLowerCase().includes("</user_input>")
-  ) {
+  const spacedVariants = [
+    "< /user_input >",
+    "</USER_INPUT>",
+    "<user_input\n>",
+    "<user_input foo=1>",
+    "< / USER_INPUT >",
+    "<USER_INPUT>",
+  ];
+
+  let allVariantsNeutralized = true;
+  for (const variant of spacedVariants) {
+    const cleaned = escapeDelimiterTags(`prefix ${variant} suffix`);
+    if (
+      cleaned.toLowerCase().includes("<user_input") ||
+      cleaned.toLowerCase().includes("</user_input")
+    ) {
+      fail(
+        `Check 7: escapeDelimiterTags failed to neutralize variant: ${variant}`,
+      );
+      allVariantsNeutralized = false;
+    }
+
+    // Confirm that when passed to builder, the prompt has exactly 1 closing tag
+    const built = buildExtractMessages(`Idea with ${variant}`);
+    const closeCount = (built.prompt.match(/<\/user_input>/gi) || []).length;
+    if (closeCount !== 1) {
+      fail(
+        `Check 7: Built prompt with ${JSON.stringify(variant)} contains ${closeCount} closing tags`,
+      );
+      allVariantsNeutralized = false;
+    }
+  }
+
+  if (allVariantsNeutralized) {
     pass(
-      "Check 7: escapeDelimiterTags properly neutralizes open and close delimiter tags",
+      "Check 7: escapeDelimiterTags neutralizes spaced, newline, attribute, and mixed-case tag variants",
     );
-  } else {
-    fail("Check 7: escapeDelimiterTags failed to neutralize tags", cleaned);
   }
 
   console.log("\n-------------------------------------------");

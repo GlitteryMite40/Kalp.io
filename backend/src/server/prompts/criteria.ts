@@ -7,14 +7,18 @@ import {
 
 export const CRITERIA_PROMPT_VERSION = "criteria.v1";
 
-export const NodeCriteriaSchema = z.object({
-  acceptance: z.array(z.string()).default([]),
-  tests: z.array(z.string()).default([]),
+export const StrictNodeCriteriaSchema = z.object({
+  acceptance: z
+    .array(z.string().trim().min(1, "Acceptance criterion cannot be empty"))
+    .min(1, "At least one acceptance criterion is required"),
+  tests: z
+    .array(z.string().trim().min(1, "Test specification cannot be empty"))
+    .min(1, "At least one test specification is required"),
 });
 
-export const CriteriaMapSchema = z.record(z.string(), NodeCriteriaSchema);
+export const NodeCriteriaSchema = StrictNodeCriteriaSchema;
 
-export const CriteriaOutputSchema = z.preprocess((val) => {
+function unwrapCriteria(val: unknown): unknown {
   if (typeof val === "object" && val !== null && !Array.isArray(val)) {
     const obj = val as Record<string, unknown>;
     if (
@@ -26,9 +30,64 @@ export const CriteriaOutputSchema = z.preprocess((val) => {
     }
   }
   return val;
-}, CriteriaMapSchema);
+}
+
+export const CriteriaMapSchema = z
+  .record(z.string(), StrictNodeCriteriaSchema)
+  .refine((data) => Object.keys(data).length > 0, {
+    message: "Criteria output cannot be empty",
+  });
+
+export const CriteriaOutputSchema = z.preprocess(
+  unwrapCriteria,
+  CriteriaMapSchema,
+);
 
 export type CriteriaOutput = z.infer<typeof CriteriaOutputSchema>;
+
+/**
+ * Creates a schema enforcing that output contains exactly the provided node keys,
+ * no extra keys, no missing keys, and no empty object.
+ */
+export function makeCriteriaSchema(nodeKeys: string[]) {
+  const expectedKeys = new Set(nodeKeys);
+
+  return z.preprocess(
+    unwrapCriteria,
+    z.record(z.string(), StrictNodeCriteriaSchema).superRefine((data, ctx) => {
+      const dataKeys = Object.keys(data);
+      if (dataKeys.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Criteria output cannot be empty",
+        });
+        return;
+      }
+
+      // Must contain every input key
+      for (const key of expectedKeys) {
+        if (!(key in data)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Missing required node_key "${key}" in criteria output`,
+            path: [key],
+          });
+        }
+      }
+
+      // No extra keys
+      for (const key of dataKeys) {
+        if (!expectedKeys.has(key)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Unexpected extra node_key "${key}" in criteria output`,
+            path: [key],
+          });
+        }
+      }
+    }),
+  );
+}
 
 const CRITERIA_SYSTEM_MESSAGE = `${BASE_SYSTEM_GUARD}
 

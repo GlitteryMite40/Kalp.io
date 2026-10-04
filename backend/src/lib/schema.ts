@@ -363,18 +363,128 @@ export type Edge = z.infer<typeof BaseEdgeSchema>;
  * 4. Edges referencing unknown nodes (neither node_key nor id exists)
  * 5. Duplicate edges (resolving endpoints to canonical node_key when node has both)
  */
-export const BaseGraphSchema = z
-  .object({
-    project_id: z.string().uuid("project_id must be a valid UUID").optional(),
-    requirements: z.array(RequirementSchema).default([]),
-    nodes: z.array(NodeSchema),
-    edges: z.array(EdgeSchema).default([]),
-  })
-  .superRefine((graph, ctx) => {
-    // 1. Reject duplicate requirement keys
+/**
+ * -----------------------------------------------------------------------------
+ * Graph Integrity & Cycle Detection
+ * -----------------------------------------------------------------------------
+ */
+
+export interface GraphIntegrityOptions {
+  knownRequirementKeys?: string[];
+  requireRequirementKey?: boolean;
+}
+
+/**
+ * Detects cycles among DEPENDS_ON edges only.
+ * Returns the cycle as an ordered list of node_keys (e.g. ["01.1", "01.2", "01.1"]) or null.
+ * Works iteratively and safely on graphs of a few hundred nodes.
+ */
+export function findDependsOnCycle(
+  nodes: Array<{ node_key: string; id?: string }>,
+  edges: Array<{ from_node: string; to_node: string; type: string }>,
+): string[] | null {
+  const idOrKeyToNodeKey = new Map<string, string>();
+  for (const n of nodes) {
+    idOrKeyToNodeKey.set(n.node_key, n.node_key);
+    if (n.id) {
+      idOrKeyToNodeKey.set(n.id, n.node_key);
+    }
+  }
+
+  // Build adjacency map for DEPENDS_ON edges only
+  const adj = new Map<string, string[]>();
+  for (const n of nodes) {
+    if (!adj.has(n.node_key)) {
+      adj.set(n.node_key, []);
+    }
+  }
+
+  for (const edge of edges) {
+    if (edge.type === "DEPENDS_ON") {
+      const fromKey = idOrKeyToNodeKey.get(edge.from_node) ?? edge.from_node;
+      const toKey = idOrKeyToNodeKey.get(edge.to_node) ?? edge.to_node;
+      if (fromKey === toKey) {
+        return [fromKey, toKey];
+      }
+      if (!adj.has(fromKey)) {
+        adj.set(fromKey, []);
+      }
+      adj.get(fromKey)!.push(toKey);
+    }
+  }
+
+  // 0: unvisited, 1: visiting (in current DFS path), 2: visited
+  const state = new Map<string, number>();
+
+  for (const startNode of adj.keys()) {
+    if ((state.get(startNode) ?? 0) !== 0) continue;
+
+    const stack: Array<{ node: string; neighborIdx: number }> = [
+      { node: startNode, neighborIdx: 0 },
+    ];
+    state.set(startNode, 1);
+
+    while (stack.length > 0) {
+      const top = stack[stack.length - 1];
+      const u = top.node;
+      const neighbors = adj.get(u) ?? [];
+
+      if (top.neighborIdx < neighbors.length) {
+        const v = neighbors[top.neighborIdx];
+        top.neighborIdx++;
+
+        const vState = state.get(v) ?? 0;
+        if (vState === 1) {
+          // Cycle detected: reconstruct path from v to u, ending with v
+          const cycle: string[] = [v];
+          for (let i = stack.length - 1; i >= 0; i--) {
+            cycle.unshift(stack[i].node);
+            if (stack[i].node === v) {
+              break;
+            }
+          }
+          return cycle;
+        }
+
+        if (vState === 0) {
+          state.set(v, 1);
+          stack.push({ node: v, neighborIdx: 0 });
+        }
+      } else {
+        state.set(u, 2);
+        stack.pop();
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Shared graph integrity check used by GraphSchema and decompose schemas.
+ */
+export function checkGraphIntegrity(
+  input: {
+    requirements?: Array<{ key: string }>;
+    nodes: Array<{
+      node_key: string;
+      id?: string;
+      requirement_key?: string | null;
+    }>;
+    edges: Array<{
+      from_node: string;
+      to_node: string;
+      type: string;
+    }>;
+  },
+  ctx: z.RefinementCtx,
+  options?: GraphIntegrityOptions,
+): void {
+  // 1. Reject duplicate requirement keys
+  if (input.requirements) {
     const seenReqKeys = new Set<string>();
-    for (let i = 0; i < graph.requirements.length; i++) {
-      const req = graph.requirements[i];
+    for (let i = 0; i < input.requirements.length; i++) {
+      const req = input.requirements[i];
       if (seenReqKeys.has(req.key)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -385,77 +495,131 @@ export const BaseGraphSchema = z
         seenReqKeys.add(req.key);
       }
     }
+  }
 
-    const validReqKeys = new Set(graph.requirements.map((r) => r.key));
+  // 2. Reject duplicate node_key and validate requirement_key references
+  const seenNodeKeys = new Set<string>();
+  const knownReqKeys = input.requirements
+    ? new Set(input.requirements.map((r) => r.key))
+    : options?.knownRequirementKeys
+      ? new Set(options.knownRequirementKeys)
+      : null;
 
-    // 2. Reject duplicate node_key and validate requirement_key references
-    const seenNodeKeys = new Set<string>();
-    for (let i = 0; i < graph.nodes.length; i++) {
-      const node = graph.nodes[i];
-      if (seenNodeKeys.has(node.node_key)) {
+  for (let i = 0; i < input.nodes.length; i++) {
+    const node = input.nodes[i];
+    if (seenNodeKeys.has(node.node_key)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Duplicate node_key "${node.node_key}" found in graph`,
+        path: ["nodes", i, "node_key"],
+      });
+    } else {
+      seenNodeKeys.add(node.node_key);
+    }
+
+    if (options?.requireRequirementKey) {
+      if (!node.requirement_key || node.requirement_key.trim().length === 0) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: `Duplicate node_key "${node.node_key}" found in graph`,
-          path: ["nodes", i, "node_key"],
-        });
-      } else {
-        seenNodeKeys.add(node.node_key);
-      }
-
-      if (node.requirement_key && !validReqKeys.has(node.requirement_key)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Node ${node.node_key} references unknown requirement_key ${node.requirement_key}`,
+          message: `Node ${node.node_key} is missing required requirement_key`,
           path: ["nodes", i, "requirement_key"],
         });
       }
     }
 
-    // Build lookup map from both node_key and id -> canonical node_key
-    const idOrKeyToNodeKey = new Map<string, string>();
-    for (const node of graph.nodes) {
-      idOrKeyToNodeKey.set(node.node_key, node.node_key);
-      if (node.id) {
-        idOrKeyToNodeKey.set(node.id, node.node_key);
-      }
+    if (
+      knownReqKeys &&
+      node.requirement_key &&
+      !knownReqKeys.has(node.requirement_key)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Node ${node.node_key} references unknown requirement_key ${node.requirement_key}`,
+        path: ["nodes", i, "requirement_key"],
+      });
     }
+  }
 
-    // 3. Check edges referencing unknown nodes
-    for (let i = 0; i < graph.edges.length; i++) {
-      const edge = graph.edges[i];
-      if (!idOrKeyToNodeKey.has(edge.from_node)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Edge from_node "${edge.from_node}" does not exist in graph nodes`,
-          path: ["edges", i, "from_node"],
-        });
-      }
-      if (!idOrKeyToNodeKey.has(edge.to_node)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Edge to_node "${edge.to_node}" does not exist in graph nodes`,
-          path: ["edges", i, "to_node"],
-        });
-      }
+  // Build lookup map from both node_key and id -> canonical node_key
+  const idOrKeyToNodeKey = new Map<string, string>();
+  for (const node of input.nodes) {
+    idOrKeyToNodeKey.set(node.node_key, node.node_key);
+    if (node.id) {
+      idOrKeyToNodeKey.set(node.id, node.node_key);
     }
+  }
 
-    // 4. Check for duplicate edges (resolving endpoints to canonical node_key)
-    const seenEdges = new Set<string>();
-    for (let i = 0; i < graph.edges.length; i++) {
-      const edge = graph.edges[i];
-      const fromKey = idOrKeyToNodeKey.get(edge.from_node) ?? edge.from_node;
-      const toKey = idOrKeyToNodeKey.get(edge.to_node) ?? edge.to_node;
-      const edgeIdentifier = `${fromKey}->${toKey}:${edge.type}`;
-      if (seenEdges.has(edgeIdentifier)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Duplicate edge (${edge.from_node}, ${edge.to_node}, ${edge.type}) found in graph`,
-          path: ["edges", i],
-        });
-      } else {
-        seenEdges.add(edgeIdentifier);
-      }
+  // 3. Check edges referencing unknown nodes
+  for (let i = 0; i < input.edges.length; i++) {
+    const edge = input.edges[i];
+    if (!idOrKeyToNodeKey.has(edge.from_node)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Edge from_node "${edge.from_node}" does not exist in graph nodes`,
+        path: ["edges", i, "from_node"],
+      });
     }
+    if (!idOrKeyToNodeKey.has(edge.to_node)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Edge to_node "${edge.to_node}" does not exist in graph nodes`,
+        path: ["edges", i, "to_node"],
+      });
+    }
+  }
+
+  // 4. Check for self-edges after resolving endpoints to node_key
+  for (let i = 0; i < input.edges.length; i++) {
+    const edge = input.edges[i];
+    const fromKey = idOrKeyToNodeKey.get(edge.from_node);
+    const toKey = idOrKeyToNodeKey.get(edge.to_node);
+    if (fromKey && toKey && fromKey === toKey) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Self-edge is not allowed: from_node and to_node refer to the same node "${fromKey}"`,
+        path: ["edges", i, "to_node"],
+      });
+    }
+  }
+
+  // 5. Check for duplicate edges (resolving endpoints to canonical node_key)
+  const seenEdges = new Set<string>();
+  for (let i = 0; i < input.edges.length; i++) {
+    const edge = input.edges[i];
+    const fromKey = idOrKeyToNodeKey.get(edge.from_node) ?? edge.from_node;
+    const toKey = idOrKeyToNodeKey.get(edge.to_node) ?? edge.to_node;
+    const edgeIdentifier = `${fromKey}->${toKey}:${edge.type}`;
+    if (seenEdges.has(edgeIdentifier)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Duplicate edge (${edge.from_node}, ${edge.to_node}, ${edge.type}) found in graph`,
+        path: ["edges", i],
+      });
+    } else {
+      seenEdges.add(edgeIdentifier);
+    }
+  }
+
+  // 6. Check for cycles among DEPENDS_ON edges only
+  const cycle = findDependsOnCycle(input.nodes, input.edges);
+  if (cycle) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `DEPENDS_ON cycle detected: ${cycle.join(" -> ")}`,
+      path: ["edges"],
+    });
+  }
+}
+
+export const BaseGraphSchema = z
+  .object({
+    project_id: z.string().uuid("project_id must be a valid UUID").optional(),
+    requirements: z.array(RequirementSchema).default([]),
+    nodes: z.array(NodeSchema),
+    edges: z.array(EdgeSchema).default([]),
+  })
+  .superRefine((graph, ctx) => {
+    checkGraphIntegrity(graph, ctx);
   });
 
 export const GraphSchema = z.preprocess(normalizeAliases, BaseGraphSchema);

@@ -35,6 +35,29 @@ export const ArchitectureOutputSchema = z.preprocess(
 
 export type ArchitectureOutput = z.infer<typeof ArchitectureOutputSchema>;
 
+/**
+ * Creates an architecture output schema that rejects any requirement_keys entry not in requirementKeys.
+ */
+export function makeArchitectureOutputSchema(requirementKeys: string[]) {
+  const validKeys = new Set(requirementKeys);
+
+  return ArchitectureOutputSchema.superRefine((data, ctx) => {
+    for (let i = 0; i < data.modules.length; i++) {
+      const mod = data.modules[i];
+      for (let j = 0; j < mod.requirement_keys.length; j++) {
+        const reqKey = mod.requirement_keys[j];
+        if (!validKeys.has(reqKey)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Module "${mod.name}" references unknown requirement_key "${reqKey}"`,
+            path: ["modules", i, "requirement_keys", j],
+          });
+        }
+      }
+    }
+  });
+}
+
 const ARCHITECTURE_SYSTEM_MESSAGE = `${BASE_SYSTEM_GUARD}
 
 Task: From the structured requirements provided in <user_input>, describe the high-level architecture: functional modules/components and how they interact.

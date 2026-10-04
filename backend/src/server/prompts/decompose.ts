@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { NodeSchema, EdgeSchema } from "@/lib/schema";
+import { NodeSchema, EdgeSchema, checkGraphIntegrity } from "@/lib/schema";
 import {
   BASE_SYSTEM_GUARD,
   DEPENDS_ON_DIRECTION_TEXT,
@@ -19,58 +19,22 @@ export const DecomposeOutputSchema = z
     edges: z.array(EdgeSchema).default([]),
   })
   .superRefine((data, ctx) => {
-    const nodeKeys = new Set(data.nodes.map((n) => n.node_key));
-
-    // Reject duplicate node_key
-    const seenNodeKeys = new Set<string>();
-    for (let i = 0; i < data.nodes.length; i++) {
-      const node = data.nodes[i];
-      if (seenNodeKeys.has(node.node_key)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Duplicate node_key "${node.node_key}" found in nodes`,
-          path: ["nodes", i, "node_key"],
-        });
-      } else {
-        seenNodeKeys.add(node.node_key);
-      }
-    }
-
-    // Validate edge references against nodes in same output
-    for (let i = 0; i < data.edges.length; i++) {
-      const edge = data.edges[i];
-      if (!nodeKeys.has(edge.from_node)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Edge from_node "${edge.from_node}" does not exist in nodes`,
-          path: ["edges", i, "from_node"],
-        });
-      }
-      if (!nodeKeys.has(edge.to_node)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Edge to_node "${edge.to_node}" does not exist in nodes`,
-          path: ["edges", i, "to_node"],
-        });
-      }
-    }
-
-    // Reject duplicate edges
-    const seenEdges = new Set<string>();
-    for (let i = 0; i < data.edges.length; i++) {
-      const edge = data.edges[i];
-      const key = `${edge.from_node}->${edge.to_node}:${edge.type}`;
-      if (seenEdges.has(key)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Duplicate edge (${edge.from_node}, ${edge.to_node}, ${edge.type}) found in edges`,
-          path: ["edges", i],
-        });
-      } else {
-        seenEdges.add(key);
-      }
-    }
+    checkGraphIntegrity(data, ctx, { requireRequirementKey: true });
   });
+
+export function makeDecomposeOutputSchema(requirementKeys: string[]) {
+  return z
+    .object({
+      nodes: z.array(NodeSchema).min(1, "At least one node is required"),
+      edges: z.array(EdgeSchema).default([]),
+    })
+    .superRefine((data, ctx) => {
+      checkGraphIntegrity(data, ctx, {
+        knownRequirementKeys: requirementKeys,
+        requireRequirementKey: true,
+      });
+    });
+}
 
 export type DecomposeOutput = z.infer<typeof DecomposeOutputSchema>;
 
@@ -92,6 +56,7 @@ export function buildDecomposeMessages(input: {
 
 Field and Identity Rules:
 - ${FIELD_NAME_RULES_TEXT}
+- Do not output acceptance or tests (acceptance and tests are produced in a later criteria stage).
 - ${ALLOWED_STATUSES_TEXT}
 - ${ALLOWED_EDGE_TYPES_TEXT}
 - ${EDGE_INTEGRITY_RULES_TEXT}
@@ -114,9 +79,7 @@ Required JSON output format:
       "status": "not_started",
       "requirement_key": "REQ-1",
       "files": ["path/to/file.ts"],
-      "explanation": "string",
-      "acceptance": ["string"],
-      "tests": ["string"]
+      "explanation": "string"
     }
   ],
   "edges": [
