@@ -139,6 +139,15 @@ export function normalizeAliases(input: unknown): unknown {
   }
   delete normalized.requirementId;
 
+  // Requirement Key alias (requirementKey -> requirement_key)
+  if (
+    normalized.requirementKey !== undefined &&
+    normalized.requirement_key === undefined
+  ) {
+    normalized.requirement_key = normalized.requirementKey;
+  }
+  delete normalized.requirementKey;
+
   // Timestamp aliases (createdAt -> created_at)
   if (
     normalized.createdAt !== undefined &&
@@ -282,6 +291,9 @@ export type Requirement = z.infer<typeof BaseRequirementSchema>;
  * -----------------------------------------------------------------------------
  * Node Schema
  * -----------------------------------------------------------------------------
+ * LLM-facing output uses node_key, requirement_key, from_node, to_node (keys
+ * only, never UUIDs); UUID fields are filled by the persistence step.
+ *
  * Canonical snake_case shape matching database table `nodes`.
  * DB-facing IDs strictly require UUIDs.
  * `status` automatically normalizes to canonical DB snake_case via CanonicalNodeStatusSchema.
@@ -297,6 +309,12 @@ export const BaseNodeSchema = z.object({
   requirement_id: z
     .string()
     .uuid("requirement_id must be a valid UUID")
+    .nullable()
+    .optional(),
+  requirement_key: z
+    .string()
+    .trim()
+    .min(1, "requirement_key cannot be empty")
     .nullable()
     .optional(),
   files: z.array(z.string()).default([]),
@@ -339,9 +357,11 @@ export type Edge = z.infer<typeof BaseEdgeSchema>;
  * -----------------------------------------------------------------------------
  * Composed build graph holding requirements, nodes, and edges.
  * Performs superRefine checks for:
- * 1. Duplicate node_key values among nodes
- * 2. Edges referencing unknown nodes (neither node_key nor id exists)
- * 3. Duplicate edges (identical from_node, to_node, and type)
+ * 1. Duplicate requirement keys in requirements
+ * 2. Duplicate node_key values among nodes
+ * 3. Nodes referencing unknown requirement_key
+ * 4. Edges referencing unknown nodes (neither node_key nor id exists)
+ * 5. Duplicate edges (resolving endpoints to canonical node_key when node has both)
  */
 export const BaseGraphSchema = z
   .object({
@@ -351,7 +371,24 @@ export const BaseGraphSchema = z
     edges: z.array(EdgeSchema).default([]),
   })
   .superRefine((graph, ctx) => {
-    // 1. Check for duplicate node_key
+    // 1. Reject duplicate requirement keys
+    const seenReqKeys = new Set<string>();
+    for (let i = 0; i < graph.requirements.length; i++) {
+      const req = graph.requirements[i];
+      if (seenReqKeys.has(req.key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Duplicate requirement key "${req.key}" found in graph`,
+          path: ["requirements", i, "key"],
+        });
+      } else {
+        seenReqKeys.add(req.key);
+      }
+    }
+
+    const validReqKeys = new Set(graph.requirements.map((r) => r.key));
+
+    // 2. Reject duplicate node_key and validate requirement_key references
     const seenNodeKeys = new Set<string>();
     for (let i = 0; i < graph.nodes.length; i++) {
       const node = graph.nodes[i];
@@ -364,28 +401,36 @@ export const BaseGraphSchema = z
       } else {
         seenNodeKeys.add(node.node_key);
       }
-    }
 
-    // Build lookup set of valid node identifiers (both node_key and id)
-    const validNodeIdentifiers = new Set<string>();
-    for (const node of graph.nodes) {
-      validNodeIdentifiers.add(node.node_key);
-      if (node.id) {
-        validNodeIdentifiers.add(node.id);
+      if (node.requirement_key && !validReqKeys.has(node.requirement_key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Node ${node.node_key} references unknown requirement_key ${node.requirement_key}`,
+          path: ["nodes", i, "requirement_key"],
+        });
       }
     }
 
-    // 2. Check edges referencing unknown nodes
+    // Build lookup map from both node_key and id -> canonical node_key
+    const idOrKeyToNodeKey = new Map<string, string>();
+    for (const node of graph.nodes) {
+      idOrKeyToNodeKey.set(node.node_key, node.node_key);
+      if (node.id) {
+        idOrKeyToNodeKey.set(node.id, node.node_key);
+      }
+    }
+
+    // 3. Check edges referencing unknown nodes
     for (let i = 0; i < graph.edges.length; i++) {
       const edge = graph.edges[i];
-      if (!validNodeIdentifiers.has(edge.from_node)) {
+      if (!idOrKeyToNodeKey.has(edge.from_node)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: `Edge from_node "${edge.from_node}" does not exist in graph nodes`,
           path: ["edges", i, "from_node"],
         });
       }
-      if (!validNodeIdentifiers.has(edge.to_node)) {
+      if (!idOrKeyToNodeKey.has(edge.to_node)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: `Edge to_node "${edge.to_node}" does not exist in graph nodes`,
@@ -394,11 +439,13 @@ export const BaseGraphSchema = z
       }
     }
 
-    // 3. Check for duplicate edges (from_node, to_node, type)
+    // 4. Check for duplicate edges (resolving endpoints to canonical node_key)
     const seenEdges = new Set<string>();
     for (let i = 0; i < graph.edges.length; i++) {
       const edge = graph.edges[i];
-      const edgeIdentifier = `${edge.from_node}->${edge.to_node}:${edge.type}`;
+      const fromKey = idOrKeyToNodeKey.get(edge.from_node) ?? edge.from_node;
+      const toKey = idOrKeyToNodeKey.get(edge.to_node) ?? edge.to_node;
+      const edgeIdentifier = `${fromKey}->${toKey}:${edge.type}`;
       if (seenEdges.has(edgeIdentifier)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,

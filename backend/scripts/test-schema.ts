@@ -734,6 +734,127 @@ function runTests(): void {
     GraphSchema.safeParse(graphWithMultiTypeEdges).success,
   );
 
+  // RULE E: Node referencing valid requirement_key accepted
+  const graphWithValidReqKey = {
+    requirements: [{ key: "REQ-AUTH", title: "Authentication" }],
+    nodes: [
+      {
+        node_key: "01.1",
+        phase: "Init",
+        title: "Step 1",
+        requirement_key: "REQ-AUTH",
+      },
+    ],
+    edges: [],
+  };
+  assert(
+    "Graph with node referencing valid requirement_key accepted",
+    GraphSchema.safeParse(graphWithValidReqKey).success,
+  );
+
+  // RULE F: Node referencing unknown requirement_key rejected
+  const graphWithUnknownReqKey = {
+    requirements: [{ key: "REQ-AUTH", title: "Authentication" }],
+    nodes: [
+      {
+        node_key: "01.1",
+        phase: "Init",
+        title: "Step 1",
+        requirement_key: "UNKNOWN-REQ",
+      },
+    ],
+    edges: [],
+  };
+  const unknownReqResult = GraphSchema.safeParse(graphWithUnknownReqKey);
+  assert(
+    "Graph with node referencing unknown requirement_key rejected",
+    unknownReqResult.success === false &&
+      unknownReqResult.error.issues.some(
+        (i) =>
+          i.path.join(".") === "nodes.0.requirement_key" &&
+          i.message ===
+            "Node 01.1 references unknown requirement_key UNKNOWN-REQ",
+      ),
+  );
+
+  // RULE G: Duplicate requirement keys within graph.requirements rejected
+  const graphWithDuplicateReqKeys = {
+    requirements: [
+      { key: "REQ-1", title: "First Req" },
+      { key: "REQ-1", title: "Duplicate Key Req" },
+    ],
+    nodes: [{ node_key: "01.1", phase: "Init", title: "Step 1" }],
+    edges: [],
+  };
+  const duplicateReqKeyResult = GraphSchema.safeParse(
+    graphWithDuplicateReqKeys,
+  );
+  assert(
+    "Graph with duplicate requirement keys rejected by superRefine",
+    duplicateReqKeyResult.success === false &&
+      duplicateReqKeyResult.error.issues.some((i) =>
+        i.message.includes("Duplicate requirement key"),
+      ),
+  );
+
+  // RULE H: Duplicate edge written once by key and once by id rejected
+  const graphWithDuplicateEdgeKeyAndId = {
+    nodes: [
+      { node_key: "01.1", phase: "Init", title: "Step 1", id: VALID_UUID_1 },
+      { node_key: "01.2", phase: "Init", title: "Step 2", id: VALID_UUID_2 },
+    ],
+    edges: [
+      { from_node: "01.1", to_node: "01.2", type: "DEPENDS_ON" },
+      // Edge referring to the exact same nodes, but by id
+      { from_node: VALID_UUID_1, to_node: VALID_UUID_2, type: "DEPENDS_ON" },
+    ],
+  };
+  const duplicateEdgeKeyAndIdResult = GraphSchema.safeParse(
+    graphWithDuplicateEdgeKeyAndId,
+  );
+  assert(
+    "Graph with duplicate edge (one by key, one by id) rejected by superRefine",
+    duplicateEdgeKeyAndIdResult.success === false &&
+      duplicateEdgeKeyAndIdResult.error.issues.some((i) =>
+        i.message.includes("Duplicate edge"),
+      ),
+  );
+
+  // Duplicate edge with mixed key and id
+  const graphWithDuplicateEdgeMixed = {
+    nodes: [
+      { node_key: "01.1", phase: "Init", title: "Step 1", id: VALID_UUID_1 },
+      { node_key: "01.2", phase: "Init", title: "Step 2", id: VALID_UUID_2 },
+    ],
+    edges: [
+      { from_node: "01.1", to_node: "01.2", type: "DEPENDS_ON" },
+      { from_node: "01.1", to_node: VALID_UUID_2, type: "DEPENDS_ON" },
+    ],
+  };
+  const duplicateEdgeMixedResult = GraphSchema.safeParse(
+    graphWithDuplicateEdgeMixed,
+  );
+  assert(
+    "Graph with duplicate edge (mixed key and id) rejected by superRefine",
+    duplicateEdgeMixedResult.success === false &&
+      duplicateEdgeMixedResult.error.issues.some((i) =>
+        i.message.includes("Duplicate edge"),
+      ),
+  );
+
+  // RULE I: requirementKey alias in NodeSchema
+  const nodeWithReqKeyAlias = NodeSchema.parse({
+    node_key: "01.1",
+    phase: "Init",
+    title: "Step 1",
+    requirementKey: "REQ-ALIAS",
+  });
+  assert(
+    "NodeSchema normalizes requirementKey alias to requirement_key",
+    nodeWithReqKeyAlias.requirement_key === "REQ-ALIAS" &&
+      !("requirementKey" in nodeWithReqKeyAlias),
+  );
+
   // ---------------------------------------------------------------------------
   // 10. DIRECT normalizeAliases UNIT TEST
   // ---------------------------------------------------------------------------
@@ -741,6 +862,7 @@ function runTests(): void {
   const rawObj = {
     projectId: VALID_UUID_1,
     requirementId: VALID_UUID_2,
+    requirementKey: "REQ-10",
     createdAt: "2026-10-04T00:00:00Z",
     nodeKey: "01.1",
     fromNode: "node-1",
@@ -755,6 +877,11 @@ function runTests(): void {
     "normalizeAliases converts requirementId -> requirement_id",
     normalized.requirement_id === VALID_UUID_2 &&
       !("requirementId" in normalized),
+  );
+  assert(
+    "normalizeAliases converts requirementKey -> requirement_key",
+    normalized.requirement_key === "REQ-10" &&
+      !("requirementKey" in normalized),
   );
   assert(
     "normalizeAliases converts createdAt -> created_at",
