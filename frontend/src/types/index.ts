@@ -43,3 +43,28 @@ export interface ProjectPrompt {
   targetPlatform?: string;
   complexity?: "prototype" | "mvp" | "production";
 }
+
+export type LlmState =
+  "available" | "unavailable" | "key_missing" | "key_invalid";
+
+export interface LlmCandidate {
+  name: string;
+  version: number;
+  tier: "pro" | "flash" | "flash-lite";
+  preview: boolean;
+  state: "selected" | "failed" | "untested";
+  reason?: string;
+}
+
+export interface LlmStatus {
+  provider: "gemini";
+  state: LlmState;
+  selectedModel: string | null;
+  pinned: boolean;
+  modelsListed: number;
+  candidates: LlmCandidate[];
+  checkedAt: string;
+  cached: boolean;
+  nextRefreshAt: string | null;
+  error?: string;
+}

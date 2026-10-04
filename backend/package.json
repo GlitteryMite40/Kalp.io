@@ -12,7 +12,8 @@
     "format:check": "prettier --check .",
     "db:check": "tsx --env-file=.env.local src/lib/db.ts",
     "db:migrate": "tsx --env-file=.env.local scripts/migrate.ts",
-    "db:smoke": "tsx --env-file=.env.local scripts/db-smoke.ts"
+    "db:smoke": "tsx --env-file=.env.local scripts/db-smoke.ts",
+    "llm:check": "tsx --env-file=.env.local scripts/llm-check.ts"
   },
   "dependencies": {
     "next": "16.3.8",
