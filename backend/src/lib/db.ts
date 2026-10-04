@@ -22,7 +22,7 @@ export function getDb(): postgres.Sql {
       // Required for Supabase Transaction Pooler (port 6543)
       prepare: false,
       // Conservative max connections per serverless function instance
-      max: 10,
+      max: 1,
       idle_timeout: 20,
       connect_timeout: 10,
       ssl: "require",
