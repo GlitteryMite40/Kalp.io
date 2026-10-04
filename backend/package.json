@@ -13,7 +13,8 @@
     "db:check": "tsx --env-file=.env.local src/lib/db.ts",
     "db:migrate": "tsx --env-file=.env.local scripts/migrate.ts",
     "db:smoke": "tsx --env-file=.env.local scripts/db-smoke.ts",
-    "llm:check": "tsx --env-file=.env.local scripts/llm-check.ts"
+    "llm:check": "tsx --env-file=.env.local scripts/llm-check.ts",
+    "test:schema": "tsx scripts/test-schema.ts"
   },
   "dependencies": {
     "next": "16.3.8",
