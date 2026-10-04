@@ -42,11 +42,41 @@ const TIER_COLORS: Record<string, string> = {
   "flash-lite": "border-zinc-500/30 bg-zinc-500/10 text-zinc-300",
 };
 
+function formatRelativeTime(isoString: string): string {
+  const timestamp = new Date(isoString).getTime();
+  if (Number.isNaN(timestamp)) return isoString;
+  const elapsedSeconds = Math.max(
+    0,
+    Math.floor((Date.now() - timestamp) / 1000),
+  );
+  if (elapsedSeconds < 60) {
+    return "just now";
+  }
+  const minutes = Math.floor(elapsedSeconds / 60);
+  if (minutes < 60) {
+    return `${minutes} min ago`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours}h ago`;
+  }
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
 export default function GeminiStatusPage() {
   const [status, setStatus] = useState<LlmStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [networkError, setNetworkError] = useState<string | null>(null);
   const [cooldownRemaining, setCooldownRemaining] = useState<number>(0);
+  const [, setTick] = useState<number>(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTick((t) => t + 1);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const performFetch = async (refresh: boolean) => {
     setLoading(true);
@@ -325,7 +355,7 @@ export default function GeminiStatusPage() {
                     className="text-xs text-zinc-300 font-mono truncate max-w-[150px]"
                     title={status.checkedAt}
                   >
-                    {status.checkedAt}
+                    {formatRelativeTime(status.checkedAt)}
                   </span>
                 </div>
               </div>

@@ -71,6 +71,22 @@ function sanitizeApiKey(text: string): string {
 }
 
 /**
+ * Checks if response body indicates an API key problem (case-insensitive).
+ * Never logged or returned.
+ */
+function isApiKeyErrorBody(bodyText: string): boolean {
+  if (!bodyText) return false;
+  const lower = bodyText.toLowerCase();
+  return (
+    lower.includes("api key not valid") ||
+    lower.includes("api_key_invalid") ||
+    lower.includes("api key expired") ||
+    lower.includes("api_key_expired") ||
+    lower.includes("invalid api key")
+  );
+}
+
+/**
  * Lazily retrieves the API key from environment, never throwing on import.
  */
 export function getApiKey(): string {
@@ -142,11 +158,31 @@ export async function listModels(): Promise<ApiModel[]> {
       });
 
       if (!response.ok) {
-        if (response.status === 400 || response.status === 401) {
+        if (response.status === 401) {
           throw new LlmError(
             "API_KEY_INVALID",
             "Gemini API key is invalid or unauthorized",
-            response.status,
+            401,
+          );
+        }
+        if (response.status === 400) {
+          let bodyText = "";
+          try {
+            bodyText = await response.text();
+          } catch {
+            // ignore
+          }
+          if (isApiKeyErrorBody(bodyText)) {
+            throw new LlmError(
+              "API_KEY_INVALID",
+              "Gemini API key is invalid or unauthorized",
+              400,
+            );
+          }
+          throw new LlmError(
+            "NO_MODEL_AVAILABLE",
+            "Gemini models request failed with bad request (HTTP 400)",
+            400,
           );
         }
         if (response.status === 429) {
@@ -190,7 +226,8 @@ export async function listModels(): Promise<ApiModel[]> {
 
 /**
  * Probes a candidate model with a tiny generateContent request.
- * Retries 5xx/network errors up to 2 times with backoff (500ms, 1500ms).
+ * Retries 5xx/non-abort network errors up to 2 times with backoff (500ms, 1500ms).
+ * An AbortError from timeout is NOT retried.
  */
 async function probeCandidate(
   modelName: string,
@@ -231,12 +268,35 @@ async function probeCandidate(
         return { ok: true, status: 200 };
       }
 
-      if (response.status === 400 || response.status === 401) {
+      if (response.status === 401) {
         return {
           ok: false,
-          status: response.status,
+          status: 401,
           isApiKeyError: true,
-          error: "Gemini API key is invalid",
+          error: "Gemini API key is invalid or unauthorized",
+        };
+      }
+
+      if (response.status === 400) {
+        let bodyText = "";
+        try {
+          bodyText = await response.text();
+        } catch {
+          // ignore
+        }
+        if (isApiKeyErrorBody(bodyText)) {
+          return {
+            ok: false,
+            status: 400,
+            isApiKeyError: true,
+            error: "Gemini API key is invalid or unauthorized",
+          };
+        }
+        return {
+          ok: false,
+          status: 400,
+          isApiKeyError: false,
+          error: "bad request",
         };
       }
 
@@ -270,6 +330,9 @@ async function probeCandidate(
       };
     } catch (err) {
       clearTimeout(timeout);
+      if (err instanceof Error && err.name === "AbortError") {
+        return { ok: false, error: "timed out" };
+      }
       if (attempt < 2) {
         await wait(backoffs[attempt]);
         attempt++;
@@ -287,8 +350,11 @@ async function probeCandidate(
  * Selects the best available Gemini model with automatic fallback.
  */
 export async function selectModel(
-  opts: { force?: boolean } = {},
+  opts: { force?: boolean; exclude?: string[] } = {},
 ): Promise<string> {
+  const prevCache = globalThis.__kalp_llm_cache__;
+  const lastForcedAt = opts.force ? Date.now() : prevCache?.lastForcedAt;
+
   const pinned = getPinnedModel();
   if (pinned) {
     const parsed = parseModel(pinned) || {
@@ -303,6 +369,7 @@ export async function selectModel(
       modelsListed: 1,
       pinned: true,
       state: "available",
+      lastForcedAt,
       candidates: [
         {
           name: parsed.name,
@@ -325,12 +392,36 @@ export async function selectModel(
     Date.now() - cache.probedAt < MODEL_CACHE_TTL_MS;
 
   if (!opts.force && isCacheFresh && cache.model) {
-    return cache.model;
+    if (!opts.exclude || !opts.exclude.includes(cache.model)) {
+      return cache.model;
+    }
   }
 
   const apiKey = getApiKey();
-  const models = await listModels();
-  const ranked = rankModels(models);
+  let models: ApiModel[];
+  try {
+    models = await listModels();
+  } catch (err) {
+    const isKeyInvalid =
+      err instanceof LlmError && err.code === "API_KEY_INVALID";
+    const state = isKeyInvalid ? "key_invalid" : "unavailable";
+    globalThis.__kalp_llm_cache__ = {
+      model: null,
+      probedAt: Date.now(),
+      modelsListed: 0,
+      pinned: false,
+      state,
+      candidates: [],
+      lastForcedAt,
+      error: sanitizeApiKey((err as Error).message),
+    };
+    throw err;
+  }
+  let ranked = rankModels(models);
+
+  if (opts.exclude && opts.exclude.length > 0) {
+    ranked = ranked.filter((m) => !opts.exclude!.includes(m.name));
+  }
 
   if (ranked.length === 0) {
     globalThis.__kalp_llm_cache__ = {
@@ -340,6 +431,7 @@ export async function selectModel(
       pinned: false,
       state: "unavailable",
       candidates: [],
+      lastForcedAt,
       error: "No compatible Gemini text generation models found",
     };
     throw new LlmError(
@@ -349,12 +441,12 @@ export async function selectModel(
   }
 
   const probePool = ranked.slice(0, 6);
-  const candidates: CandidateStatus[] = ranked.map((r, idx) => ({
+  const candidates: CandidateStatus[] = ranked.map((r) => ({
     name: r.name,
     version: r.version,
     tier: r.tier,
     preview: r.preview,
-    state: (idx < 6 ? "untested" : "untested") as CandidateState,
+    state: "untested" as CandidateState,
   }));
 
   let selectedModel: string | null = null;
@@ -382,6 +474,7 @@ export async function selectModel(
         pinned: false,
         state: "key_invalid",
         candidates,
+        lastForcedAt,
         error: "Gemini API key is invalid",
       };
       throw new LlmError("API_KEY_INVALID", "Gemini API key is invalid");
@@ -399,6 +492,7 @@ export async function selectModel(
       pinned: false,
       state: "unavailable",
       candidates,
+      lastForcedAt,
       error: "All probed Gemini model candidates failed",
     };
     throw new LlmError(
@@ -414,9 +508,7 @@ export async function selectModel(
     pinned: false,
     state: "available",
     candidates,
-    lastForcedAt: opts.force
-      ? Date.now()
-      : globalThis.__kalp_llm_cache__?.lastForcedAt,
+    lastForcedAt,
   };
 
   return selectedModel;
@@ -472,6 +564,35 @@ async function callGeminiGenerate(
         return { ok: true, status: response.status, text };
       }
 
+      if (response.status === 401) {
+        throw new LlmError(
+          "API_KEY_INVALID",
+          "Gemini API key is invalid or unauthorized",
+          401,
+        );
+      }
+
+      if (response.status === 400) {
+        let bodyText = "";
+        try {
+          bodyText = await response.text();
+        } catch {
+          // ignore
+        }
+        if (isApiKeyErrorBody(bodyText)) {
+          throw new LlmError(
+            "API_KEY_INVALID",
+            "Gemini API key is invalid or unauthorized",
+            400,
+          );
+        }
+        return {
+          ok: false,
+          status: 400,
+          error: "HTTP 400: bad request",
+        };
+      }
+
       if (response.status >= 500 && attempt < 2) {
         await wait(backoffs[attempt]);
         attempt++;
@@ -485,16 +606,19 @@ async function callGeminiGenerate(
       };
     } catch (err) {
       clearTimeout(timeout);
-      if (attempt < 2) {
-        await wait(backoffs[attempt]);
-        attempt++;
-        continue;
+      if (err instanceof LlmError) {
+        throw err;
       }
       if (err instanceof Error && err.name === "AbortError") {
         throw new LlmError(
           "TIMEOUT",
           `Gemini request timed out after ${timeoutMs}ms`,
         );
+      }
+      if (attempt < 2) {
+        await wait(backoffs[attempt]);
+        attempt++;
+        continue;
       }
       return {
         ok: false,
@@ -520,6 +644,7 @@ export async function generateJson<T>(
   },
 ): Promise<{ data: T; model: string }> {
   const apiKey = getApiKey();
+  const excludedModels: string[] = [];
   let currentModel = await selectModel();
 
   let response = await callGeminiGenerate(currentModel, apiKey, prompt, opts);
@@ -531,9 +656,17 @@ export async function generateJson<T>(
       response.status === 404 ||
       response.status === 403)
   ) {
+    excludedModels.push(currentModel);
     invalidateLlmCache();
-    currentModel = await selectModel({ force: true });
+    currentModel = await selectModel({ force: true, exclude: excludedModels });
     response = await callGeminiGenerate(currentModel, apiKey, prompt, opts);
+    if (!response.ok && response.status === 429) {
+      throw new LlmError(
+        "RATE_LIMITED",
+        "Gemini API rate limited or quota exceeded",
+        429,
+      );
+    }
   }
 
   if (!response.ok || !response.text) {
@@ -621,9 +754,26 @@ export interface LlmStatusResponse {
 export async function getLlmStatus(
   options: { refresh?: boolean } = {},
 ): Promise<LlmStatusResponse> {
+  const cache = globalThis.__kalp_llm_cache__;
+  const now = Date.now();
+
+  const getCooldownNextRefreshAt = (
+    forcedAt?: number,
+    forcedNow?: boolean,
+  ): string | null => {
+    if (forcedNow) {
+      return new Date(now + REFRESH_COOLDOWN_MS).toISOString();
+    }
+    if (forcedAt && now - forcedAt < REFRESH_COOLDOWN_MS) {
+      return new Date(forcedAt + REFRESH_COOLDOWN_MS).toISOString();
+    }
+    return null;
+  };
+
   try {
     getApiKey();
   } catch {
+    const nextRefreshAt = getCooldownNextRefreshAt(cache?.lastForcedAt);
     return {
       provider: "gemini",
       state: "key_missing",
@@ -633,15 +783,12 @@ export async function getLlmStatus(
       candidates: [],
       checkedAt: new Date().toISOString(),
       cached: false,
-      nextRefreshAt: null,
+      nextRefreshAt,
       error: "LLM_API_KEY is not configured",
     };
   }
 
-  const cache = globalThis.__kalp_llm_cache__;
-  const now = Date.now();
-
-  // If refresh requested, enforce 60s cooldown from last forced probe
+  // If refresh requested, enforce 60s cooldown from last forced probe across ALL states
   if (options.refresh && cache?.lastForcedAt) {
     const elapsed = now - cache.lastForcedAt;
     if (elapsed < REFRESH_COOLDOWN_MS) {
@@ -665,6 +812,7 @@ export async function getLlmStatus(
 
   // Use cache if not refresh and still fresh
   if (!options.refresh && cache && now - cache.probedAt < MODEL_CACHE_TTL_MS) {
+    const nextRefreshAt = getCooldownNextRefreshAt(cache.lastForcedAt);
     return {
       provider: "gemini",
       state: cache.state,
@@ -674,7 +822,7 @@ export async function getLlmStatus(
       candidates: cache.candidates,
       checkedAt: new Date(cache.probedAt).toISOString(),
       cached: true,
-      nextRefreshAt: null,
+      nextRefreshAt,
       error: cache.error,
     };
   }
@@ -683,6 +831,10 @@ export async function getLlmStatus(
   try {
     await selectModel({ force: !!options.refresh });
     const freshCache = globalThis.__kalp_llm_cache__!;
+    const nextRefreshAt = getCooldownNextRefreshAt(
+      freshCache.lastForcedAt,
+      !!options.refresh,
+    );
     return {
       provider: "gemini",
       state: "available",
@@ -692,15 +844,18 @@ export async function getLlmStatus(
       candidates: freshCache.candidates,
       checkedAt: new Date(freshCache.probedAt).toISOString(),
       cached: false,
-      nextRefreshAt: options.refresh
-        ? new Date(now + REFRESH_COOLDOWN_MS).toISOString()
-        : null,
+      nextRefreshAt,
     };
   } catch (err) {
     const currentCache = globalThis.__kalp_llm_cache__;
     const errorCode = err instanceof LlmError ? err.code : "NO_MODEL_AVAILABLE";
     const state: "key_invalid" | "unavailable" =
       errorCode === "API_KEY_INVALID" ? "key_invalid" : "unavailable";
+
+    const nextRefreshAt = getCooldownNextRefreshAt(
+      currentCache?.lastForcedAt,
+      !!options.refresh,
+    );
 
     return {
       provider: "gemini",
@@ -709,11 +864,9 @@ export async function getLlmStatus(
       pinned: !!getPinnedModel(),
       modelsListed: currentCache?.modelsListed ?? 0,
       candidates: currentCache?.candidates ?? [],
-      checkedAt: new Date().toISOString(),
+      checkedAt: new Date(currentCache?.probedAt ?? now).toISOString(),
       cached: false,
-      nextRefreshAt: options.refresh
-        ? new Date(now + REFRESH_COOLDOWN_MS).toISOString()
-        : null,
+      nextRefreshAt,
       error: sanitizeApiKey((err as Error).message),
     };
   }

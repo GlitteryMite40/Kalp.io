@@ -19,7 +19,7 @@ const TIER_RANK: Record<ModelTier, number> = {
 };
 
 const EXCLUDED_REST_PATTERN =
-  /(?:image|tts|audio|live|embedding|computer|robotics|vision|exp|latest)/i;
+  /(?:image|tts|audio|live|embedding|computer|robotics|vision|exp|latest|customtools)/i;
 
 /**
  * Parses a Gemini model name returned by the API.
