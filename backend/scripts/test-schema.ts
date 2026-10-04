@@ -18,6 +18,8 @@ import {
   Edge,
   findDependsOnCycle,
   checkGraphIntegrity,
+  findUncoveredRequirements,
+  sortNodesByPhase,
 } from "../src/lib/schema";
 
 interface TestResult {
@@ -1059,6 +1061,269 @@ function runTests(): void {
   assert(
     "checkGraphIntegrity standalone unit test flags missing requirement_key",
     integrityCustomIssue,
+  );
+
+  // ---------------------------------------------------------------------------
+  // 6. REQUIREMENT COVERAGE, PRECEDENCE, CONSISTENCY & PHASE SORTING (B1 - B4)
+  // ---------------------------------------------------------------------------
+  console.log(
+    "6. Testing Requirement Coverage, Precedence, Consistency & Phase Sorting...",
+  );
+
+  // B1: findUncoveredRequirements helper
+  const uncovered1 = findUncoveredRequirements(
+    ["REQ-1", "REQ-2", "REQ-3"],
+    [{ requirement_key: "REQ-1" }, { requirement_key: "REQ-2" }],
+  );
+  assert(
+    "findUncoveredRequirements returns uncovered key REQ-3",
+    uncovered1.length === 1 && uncovered1[0] === "REQ-3",
+  );
+
+  const uncoveredNone = findUncoveredRequirements(
+    ["REQ-1", "REQ-2"],
+    [
+      { requirement_key: "REQ-1" },
+      { requirement_key: "REQ-2" },
+      { requirement_key: "REQ-1" },
+    ],
+  );
+  assert(
+    "findUncoveredRequirements returns empty array when all covered",
+    uncoveredNone.length === 0,
+  );
+
+  // B1: requireFullCoverage option in checkGraphIntegrity
+  const coverageIssues: Array<{ message: string; path: (string | number)[] }> =
+    [];
+  const coverageCtx = {
+    addIssue: (issue: { message: string; path: (string | number)[] }) => {
+      coverageIssues.push(issue);
+    },
+  };
+
+  // Valid full coverage
+  coverageIssues.length = 0;
+  checkGraphIntegrity(
+    {
+      requirements: [{ key: "REQ-1" }, { key: "REQ-2" }],
+      nodes: [
+        { node_key: "01.1", requirement_key: "REQ-1" },
+        { node_key: "01.2", requirement_key: "REQ-2" },
+      ],
+      edges: [],
+    },
+    coverageCtx as never,
+    { requireFullCoverage: true },
+  );
+  assert(
+    "requireFullCoverage: true passes when all requirements covered",
+    coverageIssues.length === 0,
+  );
+
+  // Invalid coverage with input.requirements: path ["requirements", index]
+  coverageIssues.length = 0;
+  checkGraphIntegrity(
+    {
+      requirements: [{ key: "REQ-1" }, { key: "REQ-2" }, { key: "REQ-3" }],
+      nodes: [
+        { node_key: "01.1", requirement_key: "REQ-1" },
+        { node_key: "01.2", requirement_key: "REQ-2" },
+      ],
+      edges: [],
+    },
+    coverageCtx as never,
+    { requireFullCoverage: true },
+  );
+  assert(
+    "requireFullCoverage: true flags uncovered REQ-3 at path ['requirements', 2]",
+    coverageIssues.some(
+      (i) =>
+        i.message === "Requirement REQ-3 is not covered by any node" &&
+        i.path[0] === "requirements" &&
+        i.path[1] === 2,
+    ),
+  );
+
+  // Invalid coverage without input.requirements (e.g. knownRequirementKeys): path ["nodes"]
+  coverageIssues.length = 0;
+  checkGraphIntegrity(
+    {
+      nodes: [{ node_key: "01.1", requirement_key: "REQ-1" }],
+      edges: [],
+    },
+    coverageCtx as never,
+    { knownRequirementKeys: ["REQ-1", "REQ-2"], requireFullCoverage: true },
+  );
+  assert(
+    "requireFullCoverage: true flags uncovered REQ-2 at path ['nodes'] when input.requirements absent",
+    coverageIssues.some(
+      (i) =>
+        i.message === "Requirement REQ-2 is not covered by any node" &&
+        i.path.length === 1 &&
+        i.path[0] === "nodes",
+    ),
+  );
+
+  // Default requireFullCoverage is false: GraphSchema doesn't reject uncovered
+  const partialCoverageGraph = {
+    requirements: [
+      { key: "REQ-1", title: "Req 1" },
+      { key: "REQ-2", title: "Req 2" },
+    ],
+    nodes: [
+      {
+        node_key: "01.1",
+        phase: "01",
+        title: "Task 1",
+        requirement_key: "REQ-1",
+      },
+    ],
+    edges: [],
+  };
+  const resPartial = GraphSchema.safeParse(partialCoverageGraph);
+  assert(
+    "Default GraphSchema does not require full coverage",
+    resPartial.success === true,
+  );
+
+  // B2: Known keys precedence
+  const precedenceIssues: Array<{ message: string }> = [];
+  const precedenceCtx = {
+    addIssue: (issue: { message: string }) => {
+      precedenceIssues.push(issue);
+    },
+  };
+  checkGraphIntegrity(
+    {
+      requirements: [{ key: "REQ-FROM-GRAPH" }],
+      nodes: [
+        { node_key: "01.1", requirement_key: "REQ-FROM-KNOWN" },
+        { node_key: "01.2", requirement_key: "REQ-FROM-GRAPH" },
+      ],
+      edges: [],
+    },
+    precedenceCtx as never,
+    { knownRequirementKeys: ["REQ-FROM-KNOWN"] },
+  );
+  assert(
+    "knownRequirementKeys takes precedence over input.requirements",
+    precedenceIssues.some((m) =>
+      m.message.includes("references unknown requirement_key REQ-FROM-GRAPH"),
+    ) && !precedenceIssues.some((m) => m.message.includes("REQ-FROM-KNOWN")),
+  );
+
+  // B3: requirement_id vs requirement_key consistency
+  const consistencyIssues: Array<{ message: string }> = [];
+  const consistencyCtx = {
+    addIssue: (issue: { message: string }) => {
+      consistencyIssues.push(issue);
+    },
+  };
+
+  // Valid consistency
+  consistencyIssues.length = 0;
+  checkGraphIntegrity(
+    {
+      requirements: [{ id: VALID_UUID_1, key: "REQ-1" }],
+      nodes: [
+        {
+          node_key: "01.1",
+          requirement_id: VALID_UUID_1,
+          requirement_key: "REQ-1",
+        },
+      ],
+      edges: [],
+    },
+    consistencyCtx as never,
+  );
+  assert(
+    "Consistent requirement_id and requirement_key accepted",
+    consistencyIssues.length === 0,
+  );
+
+  // Inconsistent requirement_id vs requirement_key
+  consistencyIssues.length = 0;
+  checkGraphIntegrity(
+    {
+      requirements: [{ id: VALID_UUID_1, key: "REQ-1" }],
+      nodes: [
+        {
+          node_key: "01.1",
+          requirement_id: VALID_UUID_1,
+          requirement_key: "REQ-MISMATCH",
+        },
+      ],
+      edges: [],
+    },
+    consistencyCtx as never,
+  );
+  assert(
+    "Inconsistent requirement_id vs requirement_key rejected",
+    consistencyIssues.some(
+      (m) =>
+        m.message.includes('does not match requirement_key "REQ-MISMATCH"') &&
+        m.message.includes(VALID_UUID_1),
+    ),
+  );
+
+  // Node requirement_id not present in requirements: consistency check skips
+  consistencyIssues.length = 0;
+  checkGraphIntegrity(
+    {
+      requirements: [{ id: VALID_UUID_1, key: "REQ-1" }],
+      nodes: [
+        {
+          node_key: "01.1",
+          requirement_id: VALID_UUID_2,
+          requirement_key: "REQ-1",
+        },
+      ],
+      edges: [],
+    },
+    consistencyCtx as never,
+  );
+  assert(
+    "requirement_id not found in requirements does not trigger consistency issue",
+    consistencyIssues.length === 0,
+  );
+
+  // B4: sortNodesByPhase helper
+  const unorderedNodes = [
+    { node_key: "n4", phase: "Phase 10", originalOrder: 1 },
+    { node_key: "n2", phase: "Phase 2", originalOrder: 2 },
+    { node_key: "n1", phase: "Phase 1", originalOrder: 3 },
+    { node_key: "n3", phase: "Phase 2", originalOrder: 4 },
+  ];
+  const sorted = sortNodesByPhase(unorderedNodes);
+  assert(
+    "sortNodesByPhase sorts numerically: Phase 1, Phase 2, Phase 2, Phase 10",
+    sorted[0].phase === "Phase 1" &&
+      sorted[1].phase === "Phase 2" &&
+      sorted[2].phase === "Phase 2" &&
+      sorted[3].phase === "Phase 10",
+  );
+  assert(
+    "sortNodesByPhase is stable (tie-broken by original index)",
+    sorted[1].originalOrder === 2 && sorted[2].originalOrder === 4,
+  );
+  assert(
+    "sortNodesByPhase does not mutate original array",
+    unorderedNodes[0].node_key === "n4",
+  );
+
+  // Schema does NOT reject unordered phases
+  const unorderedGraph = {
+    nodes: [
+      { node_key: "02.1", phase: "02", title: "Later phase" },
+      { node_key: "01.1", phase: "01", title: "Earlier phase" },
+    ],
+    edges: [],
+  };
+  const resUnordered = GraphSchema.safeParse(unorderedGraph);
+  assert(
+    "GraphSchema does not reject unordered phases",
+    resUnordered.success === true,
   );
 
   // ---------------------------------------------------------------------------

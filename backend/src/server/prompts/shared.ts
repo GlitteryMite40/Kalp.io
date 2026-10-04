@@ -70,7 +70,7 @@ export const ALLOWED_EDGE_TYPES_TEXT = `Edge types are exactly: ${EDGE_TYPES.joi
  * Field naming and identity rules matching database schemas without database entity IDs.
  */
 export const FIELD_NAME_RULES_TEXT =
-  "Use snake_case field names matching the schema: node_key, requirement_key, from_node, to_node, phase, title, type, status, files, explanation, acceptance, tests. Use keys only, not UUIDs, ids or database values. Requirement keys look like REQ-1; node keys are short stable strings such as 01.1. Nodes reference their requirement through requirement_key.";
+  "Use snake_case field names matching the schema: node_key, requirement_key, from_node, to_node, phase, title, type, status, files, explanation. Use keys only, not UUIDs, ids or database values. Requirement keys look like REQ-1; node keys are short stable strings such as 01.1. Nodes reference their requirement through requirement_key.";
 
 /**
  * Structural integrity rules for graph edges.

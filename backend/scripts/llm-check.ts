@@ -75,49 +75,57 @@ async function runLlmCheck() {
     process.exit(1);
   }
 
-  console.log("\n--- PART B: Gemini Network & JSON Generation ---");
+  const isOffline = process.argv.includes("--offline");
 
-  try {
-    const selectedModel = await selectModel({ force: true });
-    console.log(`Chosen model: ${selectedModel}`);
-
-    const cache = globalThis.__kalp_llm_cache__;
-    if (cache?.candidates) {
-      console.log("Candidate states:");
-      for (const c of cache.candidates.slice(0, 8)) {
-        const previewTag = c.preview ? " (preview)" : "";
-        const reasonTag = c.reason ? ` - ${c.reason}` : "";
-        console.log(
-          `  • ${c.name} [v${c.version} ${c.tier}${previewTag}]: ${c.state}${reasonTag}`,
-        );
-      }
-    }
-
-    const testSchema = z.object({
-      answer: z.string(),
-    });
-
-    const result = await generateJson(
-      "Reply with a JSON object containing the field 'answer' set to 'ok'",
-      { schema: testSchema },
+  if (isOffline) {
+    console.log(
+      "\n--- PART B: Gemini Network & JSON Generation (SKIPPED in offline mode) ---",
     );
+  } else {
+    console.log("\n--- PART B: Gemini Network & JSON Generation ---");
 
-    if (result.data && typeof result.data.answer === "string") {
-      console.log("PASS: Part B model selection and generateJson");
-      console.log(
-        `  Output: ${JSON.stringify(result.data)} via ${result.model}`,
+    try {
+      const selectedModel = await selectModel({ force: true });
+      console.log(`Chosen model: ${selectedModel}`);
+
+      const cache = globalThis.__kalp_llm_cache__;
+      if (cache?.candidates) {
+        console.log("Candidate states:");
+        for (const c of cache.candidates.slice(0, 8)) {
+          const previewTag = c.preview ? " (preview)" : "";
+          const reasonTag = c.reason ? ` - ${c.reason}` : "";
+          console.log(
+            `  • ${c.name} [v${c.version} ${c.tier}${previewTag}]: ${c.state}${reasonTag}`,
+          );
+        }
+      }
+
+      const testSchema = z.object({
+        answer: z.string(),
+      });
+
+      const result = await generateJson(
+        "Reply with a JSON object containing the field 'answer' set to 'ok'",
+        { schema: testSchema },
       );
-    } else {
-      console.error(
-        "FAIL: Part B returned invalid schema structure:",
-        result.data,
-      );
+
+      if (result.data && typeof result.data.answer === "string") {
+        console.log("PASS: Part B model selection and generateJson");
+        console.log(
+          `  Output: ${JSON.stringify(result.data)} via ${result.model}`,
+        );
+      } else {
+        console.error(
+          "FAIL: Part B returned invalid schema structure:",
+          result.data,
+        );
+        process.exit(1);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`FAIL: Part B: ${message.replace(/\r?\n/g, " ")}`);
       process.exit(1);
     }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`FAIL: Part B: ${message.replace(/\r?\n/g, " ")}`);
-    process.exit(1);
   }
 
   console.log("\n--- PART C: Mocked Robustness Tests (no network) ---");
@@ -552,10 +560,404 @@ async function runLlmCheck() {
       process.exit(1);
     }
 
+    // -------------------------------------------------------------
+    // Case h: generateJson top model returns 429 on real call, model list & next model succeed,
+    // result.model is next model, top model appears as "failed" with excluded reason, lastForcedAt unchanged
+    // -------------------------------------------------------------
+    const initialForcedAt = Date.now() - 5000;
+    globalThis.__kalp_llm_cache__ = {
+      model: "gemini-3.0-pro",
+      probedAt: initialForcedAt,
+      modelsListed: 2,
+      pinned: false,
+      state: "available",
+      lastForcedAt: initialForcedAt,
+      candidates: [
+        {
+          name: "gemini-3.0-pro",
+          version: 3,
+          tier: "pro",
+          preview: false,
+          state: "selected",
+        },
+        {
+          name: "gemini-2.5-flash",
+          version: 2.5,
+          tier: "flash",
+          preview: false,
+          state: "untested",
+        },
+      ],
+    };
+
+    globalThis.fetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/models?") || url.endsWith("/models")) {
+        return new Response(JSON.stringify(mockListModelsData), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("gemini-3.0-pro:generateContent")) {
+        return new Response("Rate limited", { status: 429 });
+      }
+      if (url.includes("gemini-2.5-flash:generateContent")) {
+        return new Response(
+          JSON.stringify({
+            candidates: [
+              { content: { parts: [{ text: '{"answer": "ok"}' }] } },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response("Not matched", { status: 500 });
+    };
+
+    const resH = await generateJson<{ answer: string }>("test prompt");
+    const cacheH = getLlmCache();
+    const topCandidateH = cacheH?.candidates.find(
+      (c) => c.name === "gemini-3.0-pro",
+    );
+    const hPassed =
+      resH.model === "gemini-2.5-flash" &&
+      cacheH?.lastForcedAt === initialForcedAt &&
+      topCandidateH?.state === "failed" &&
+      topCandidateH?.reason === "excluded after runtime failure (HTTP 429)";
+
+    if (hPassed) {
+      console.log(
+        "PASS: Case (h) - generateJson 429 fallback excludes top model, selects next model, and preserves lastForcedAt",
+      );
+    } else {
+      console.error("FAIL: Case (h) - 429 fallback failed:", { resH, cacheH });
+      process.exit(1);
+    }
+
+    // -------------------------------------------------------------
+    // Case i: pinned model returns 404 on the probe: error names the model, state unavailable, no other model is tried
+    // -------------------------------------------------------------
+    globalThis.__kalp_llm_cache__ = undefined;
+    process.env.LLM_MODEL = "gemini-pinned-404";
+
+    let fetchCallsI = 0;
+    globalThis.fetch = async (input: RequestInfo | URL) => {
+      fetchCallsI++;
+      const url = String(input);
+      if (url.includes("gemini-pinned-404:generateContent")) {
+        return new Response("Not found", { status: 404 });
+      }
+      return new Response("Other", { status: 200 });
+    };
+
+    let errorI: unknown = null;
+    try {
+      await selectModel();
+    } catch (err) {
+      errorI = err;
+    }
+
+    const cacheI = getLlmCache();
+    const iPassed =
+      fetchCallsI === 1 &&
+      errorI instanceof LlmError &&
+      errorI.code === "NO_MODEL_AVAILABLE" &&
+      errorI.message.includes("gemini-pinned-404") &&
+      cacheI?.state === "unavailable" &&
+      cacheI?.candidates[0]?.state === "failed";
+
+    delete process.env.LLM_MODEL;
+
+    if (iPassed) {
+      console.log(
+        "PASS: Case (i) - Pinned model 404 throws NO_MODEL_AVAILABLE naming model, state unavailable, no other model tried",
+      );
+    } else {
+      console.error("FAIL: Case (i) - Pinned model 404 handling failed:", {
+        errorI,
+        fetchCallsI,
+        cacheI,
+      });
+      process.exit(1);
+    }
+
+    // -------------------------------------------------------------
+    // Case j: pinned model works: probed once, cached, second selectModel call does not probe again
+    // -------------------------------------------------------------
+    globalThis.__kalp_llm_cache__ = undefined;
+    process.env.LLM_MODEL = "gemini-pinned-ok";
+
+    let fetchCallsJ = 0;
+    globalThis.fetch = async () => {
+      fetchCallsJ++;
+      return new Response(
+        JSON.stringify({
+          candidates: [{ content: { parts: [{ text: "ok" }] } }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    };
+
+    const firstJ = await selectModel();
+    const callsAfterFirstJ = fetchCallsJ;
+    const secondJ = await selectModel();
+    const callsAfterSecondJ = fetchCallsJ;
+    const cacheJ = getLlmCache();
+
+    delete process.env.LLM_MODEL;
+
+    const jPassed =
+      firstJ === "gemini-pinned-ok" &&
+      secondJ === "gemini-pinned-ok" &&
+      callsAfterFirstJ === 1 &&
+      callsAfterSecondJ === 1 &&
+      cacheJ?.state === "available" &&
+      cacheJ?.candidates[0]?.reason === "Pinned via LLM_MODEL";
+
+    if (jPassed) {
+      console.log(
+        "PASS: Case (j) - Pinned model probed once, cached, and second call does not re-probe",
+      );
+    } else {
+      console.error("FAIL: Case (j) - Pinned model caching failed:", {
+        callsAfterFirstJ,
+        callsAfterSecondJ,
+        cacheJ,
+      });
+      process.exit(1);
+    }
+
+    // -------------------------------------------------------------
+    // Case k: finishReason MAX_TOKENS throws OUTPUT_TRUNCATED and makes exactly one generate call
+    // -------------------------------------------------------------
+    globalThis.__kalp_llm_cache__ = {
+      model: "gemini-2.5-flash",
+      probedAt: Date.now(),
+      modelsListed: 1,
+      pinned: false,
+      state: "available",
+      candidates: [
+        {
+          name: "gemini-2.5-flash",
+          version: 2.5,
+          tier: "flash",
+          preview: false,
+          state: "selected",
+        },
+      ],
+    };
+
+    let generateCallsK = 0;
+    globalThis.fetch = async () => {
+      generateCallsK++;
+      return new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              finishReason: "MAX_TOKENS",
+              content: { parts: [{ text: '{"truncated": true' }] },
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    };
+
+    let errorK: unknown = null;
+    try {
+      await generateJson("test prompt");
+    } catch (err) {
+      errorK = err;
+    }
+
+    const kPassed =
+      generateCallsK === 1 &&
+      errorK instanceof LlmError &&
+      errorK.code === "OUTPUT_TRUNCATED" &&
+      errorK.message.toLowerCase().includes("maxoutputtokens");
+
+    if (kPassed) {
+      console.log(
+        "PASS: Case (k) - finishReason MAX_TOKENS throws OUTPUT_TRUNCATED with exactly one call",
+      );
+    } else {
+      console.error("FAIL: Case (k) - MAX_TOKENS handling failed:", {
+        generateCallsK,
+        errorK,
+      });
+      process.exit(1);
+    }
+
+    // -------------------------------------------------------------
+    // Case l: multi-part response with a thought part: only the non-thought text is used
+    // -------------------------------------------------------------
+    globalThis.__kalp_llm_cache__ = {
+      model: "gemini-2.5-flash",
+      probedAt: Date.now(),
+      modelsListed: 1,
+      pinned: false,
+      state: "available",
+      candidates: [
+        {
+          name: "gemini-2.5-flash",
+          version: 2.5,
+          tier: "flash",
+          preview: false,
+          state: "selected",
+        },
+      ],
+    };
+
+    globalThis.fetch = async () => {
+      return new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    thought: true,
+                    text: "Let me think about this step by step...",
+                  },
+                  { text: '{"answer": ' },
+                  { text: '"clean-output"}' },
+                ],
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    };
+
+    const resL = await generateJson<{ answer: string }>("test prompt");
+    const lPassed = resL.data?.answer === "clean-output";
+
+    if (lPassed) {
+      console.log(
+        "PASS: Case (l) - Multi-part response skips thought parts and joins non-thought text",
+      );
+    } else {
+      console.error(
+        "FAIL: Case (l) - Thought parts not filtered correctly:",
+        resL,
+      );
+      process.exit(1);
+    }
+
+    // -------------------------------------------------------------
+    // Case m: selection stops after the time budget (use an injectable or mockable clock; do not wait in real time)
+    // -------------------------------------------------------------
+    globalThis.__kalp_llm_cache__ = undefined;
+    let simulatedClock = 1000;
+    const mockClock = () => simulatedClock;
+
+    let probesAttemptedM = 0;
+    globalThis.fetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/models?") || url.endsWith("/models")) {
+        return new Response(JSON.stringify(mockListModelsData), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      probesAttemptedM++;
+      // Advance simulated clock past SELECTION_BUDGET_MS (45000)
+      simulatedClock += 50000;
+      return new Response("Busy", { status: 500 });
+    };
+
+    let errorM: unknown = null;
+    try {
+      await selectModel({ force: true, now: mockClock });
+    } catch (err) {
+      errorM = err;
+    }
+
+    const cacheM = getLlmCache();
+    const untestedCandidateM = cacheM?.candidates.find(
+      (c) => c.state === "untested",
+    );
+    const mPassed =
+      probesAttemptedM === 1 &&
+      errorM instanceof LlmError &&
+      errorM.code === "NO_MODEL_AVAILABLE" &&
+      untestedCandidateM !== undefined &&
+      untestedCandidateM.reason === "selection time budget reached";
+
+    if (mPassed) {
+      console.log(
+        "PASS: Case (m) - Selection stops after time budget and marks untested candidates",
+      );
+    } else {
+      console.error("FAIL: Case (m) - Selection budget handling failed:", {
+        probesAttemptedM,
+        errorM,
+        cacheM,
+      });
+      process.exit(1);
+    }
+
+    // -------------------------------------------------------------
+    // Case n: default maxOutputTokens 8192 is sent when the caller passes none
+    // -------------------------------------------------------------
+    globalThis.__kalp_llm_cache__ = {
+      model: "gemini-2.5-flash",
+      probedAt: Date.now(),
+      modelsListed: 1,
+      pinned: false,
+      state: "available",
+      candidates: [
+        {
+          name: "gemini-2.5-flash",
+          version: 2.5,
+          tier: "flash",
+          preview: false,
+          state: "selected",
+        },
+      ],
+    };
+
+    let capturedMaxTokens: number | undefined = undefined;
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.body) {
+        try {
+          const parsedBody = JSON.parse(String(init.body));
+          capturedMaxTokens = parsedBody.generationConfig?.maxOutputTokens;
+        } catch {
+          // ignore
+        }
+      }
+      return new Response(
+        JSON.stringify({
+          candidates: [{ content: { parts: [{ text: '{"answer": "ok"}' }] } }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    };
+
+    await generateJson<{ answer: string }>("test prompt");
+    const nPassed = capturedMaxTokens === 8192;
+
+    if (nPassed) {
+      console.log(
+        "PASS: Case (n) - Default maxOutputTokens 8192 is sent when none passed",
+      );
+    } else {
+      console.error(
+        `FAIL: Case (n) - Expected maxOutputTokens 8192, got ${capturedMaxTokens}`,
+      );
+      process.exit(1);
+    }
+
     console.log("\nAll LLM checks (Parts A, B, and C) passed successfully.");
   } finally {
     globalThis.fetch = originalFetch;
-    process.env.LLM_API_KEY = originalKey;
+    if (originalKey !== undefined) {
+      process.env.LLM_API_KEY = originalKey;
+    } else {
+      delete process.env.LLM_API_KEY;
+    }
     if (originalModel !== undefined) {
       process.env.LLM_MODEL = originalModel;
     } else {

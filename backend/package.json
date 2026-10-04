@@ -14,8 +14,11 @@
     "db:migrate": "tsx --env-file=.env.local scripts/migrate.ts",
     "db:smoke": "tsx --env-file=.env.local scripts/db-smoke.ts",
     "llm:check": "tsx --env-file=.env.local scripts/llm-check.ts",
+    "llm:check:offline": "tsx scripts/llm-check.ts --offline",
     "test:schema": "tsx scripts/test-schema.ts",
-    "test:prompts": "tsx scripts/test-prompts.ts"
+    "test:prompts": "tsx scripts/test-prompts.ts",
+    "test": "npm run test:schema && npm run test:prompts && npm run llm:check:offline",
+    "prompt:smoke": "tsx --env-file=.env.local scripts/prompt-smoke.ts"
   },
   "dependencies": {
     "next": "16.3.8",

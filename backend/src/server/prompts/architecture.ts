@@ -36,12 +36,19 @@ export const ArchitectureOutputSchema = z.preprocess(
 export type ArchitectureOutput = z.infer<typeof ArchitectureOutputSchema>;
 
 /**
- * Creates an architecture output schema that rejects any requirement_keys entry not in requirementKeys.
+ * Creates an architecture output schema that rejects any requirement_keys entry not in requirementKeys,
+ * and by default (or when opts.requireCoverage is true) rejects if any requirementKey is not referenced by at least one module.
  */
-export function makeArchitectureOutputSchema(requirementKeys: string[]) {
+export function makeArchitectureOutputSchema(
+  requirementKeys: string[],
+  opts?: { requireCoverage?: boolean },
+) {
   const validKeys = new Set(requirementKeys);
+  const requireCoverage = opts?.requireCoverage ?? true;
 
   return ArchitectureOutputSchema.superRefine((data, ctx) => {
+    const coveredKeys = new Set<string>();
+
     for (let i = 0; i < data.modules.length; i++) {
       const mod = data.modules[i];
       for (let j = 0; j < mod.requirement_keys.length; j++) {
@@ -51,6 +58,20 @@ export function makeArchitectureOutputSchema(requirementKeys: string[]) {
             code: z.ZodIssueCode.custom,
             message: `Module "${mod.name}" references unknown requirement_key "${reqKey}"`,
             path: ["modules", i, "requirement_keys", j],
+          });
+        } else {
+          coveredKeys.add(reqKey);
+        }
+      }
+    }
+
+    if (requireCoverage) {
+      for (const reqKey of requirementKeys) {
+        if (!coveredKeys.has(reqKey)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Requirement "${reqKey}" is not referenced by any architecture module`,
+            path: ["modules"],
           });
         }
       }

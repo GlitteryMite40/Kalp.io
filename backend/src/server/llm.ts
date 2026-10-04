@@ -10,6 +10,7 @@ import {
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 const MODEL_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const REFRESH_COOLDOWN_MS = 60 * 1000; // 60 seconds
+export const SELECTION_BUDGET_MS = 45000;
 
 export type LlmErrorCode =
   | "API_KEY_MISSING"
@@ -17,7 +18,8 @@ export type LlmErrorCode =
   | "NO_MODEL_AVAILABLE"
   | "RATE_LIMITED"
   | "TIMEOUT"
-  | "BAD_JSON";
+  | "BAD_JSON"
+  | "OUTPUT_TRUNCATED";
 
 export class LlmError extends Error {
   public readonly code: LlmErrorCode;
@@ -41,6 +43,14 @@ export interface CandidateStatus {
   preview: boolean;
   state: CandidateState;
   reason?: string;
+}
+
+export interface SelectModelOptions {
+  force?: boolean;
+  exclude?: string[];
+  internal?: boolean;
+  runtimeFailureStatus?: number;
+  now?: () => number;
 }
 
 export interface LlmCache {
@@ -232,6 +242,11 @@ export async function listModels(): Promise<ApiModel[]> {
 async function probeCandidate(
   modelName: string,
   apiKey: string,
+  opts?: {
+    now?: () => number;
+    startTime?: number;
+    budgetMs?: number;
+  },
 ): Promise<{
   ok: boolean;
   status?: number;
@@ -242,6 +257,15 @@ async function probeCandidate(
   let attempt = 0;
 
   while (attempt <= 2) {
+    if (opts?.now && opts?.startTime !== undefined) {
+      if (
+        opts.now() - opts.startTime >=
+        (opts.budgetMs ?? SELECTION_BUDGET_MS)
+      ) {
+        return { ok: false, error: "selection time budget reached" };
+      }
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
 
@@ -318,6 +342,14 @@ async function probeCandidate(
 
       // 5xx status
       if (response.status >= 500 && attempt < 2) {
+        if (opts?.now && opts?.startTime !== undefined) {
+          if (
+            opts.now() - opts.startTime >=
+            (opts.budgetMs ?? SELECTION_BUDGET_MS)
+          ) {
+            return { ok: false, error: "selection time budget reached" };
+          }
+        }
         await wait(backoffs[attempt]);
         attempt++;
         continue;
@@ -334,6 +366,14 @@ async function probeCandidate(
         return { ok: false, error: "timed out" };
       }
       if (attempt < 2) {
+        if (opts?.now && opts?.startTime !== undefined) {
+          if (
+            opts.now() - opts.startTime >=
+            (opts.budgetMs ?? SELECTION_BUDGET_MS)
+          ) {
+            return { ok: false, error: "selection time budget reached" };
+          }
+        }
         await wait(backoffs[attempt]);
         attempt++;
         continue;
@@ -350,46 +390,120 @@ async function probeCandidate(
  * Selects the best available Gemini model with automatic fallback.
  */
 export async function selectModel(
-  opts: { force?: boolean; exclude?: string[] } = {},
+  opts: SelectModelOptions = {},
 ): Promise<string> {
+  const now = opts.now ?? (() => Date.now());
+  const startTime = now();
   const prevCache = globalThis.__kalp_llm_cache__;
-  const lastForcedAt = opts.force ? Date.now() : prevCache?.lastForcedAt;
+  const lastForcedAt =
+    opts.force && !opts.internal ? now() : prevCache?.lastForcedAt;
 
   const pinned = getPinnedModel();
   if (pinned) {
+    const isCached =
+      !opts.force &&
+      prevCache &&
+      prevCache.pinned &&
+      prevCache.model === pinned &&
+      prevCache.state === "available" &&
+      now() - prevCache.probedAt < MODEL_CACHE_TTL_MS;
+
+    if (isCached) {
+      return pinned;
+    }
+
     const parsed = parseModel(pinned) || {
       name: pinned,
       version: 0,
       tier: "flash" as ModelTier,
       preview: false,
     };
+
+    const candidateEntry: CandidateStatus = {
+      name: parsed.name,
+      version: parsed.version,
+      tier: parsed.tier,
+      preview: parsed.preview,
+      state: "untested",
+    };
+
+    const apiKey = getApiKey();
+    const result = await probeCandidate(pinned, apiKey, {
+      now,
+      startTime,
+      budgetMs: SELECTION_BUDGET_MS,
+    });
+
+    if (result.ok) {
+      candidateEntry.state = "selected";
+      candidateEntry.reason = "Pinned via LLM_MODEL";
+      globalThis.__kalp_llm_cache__ = {
+        model: pinned,
+        probedAt: now(),
+        modelsListed: 1,
+        pinned: true,
+        state: "available",
+        lastForcedAt,
+        candidates: [candidateEntry],
+      };
+      return pinned;
+    }
+
+    if (result.isApiKeyError) {
+      candidateEntry.state = "failed";
+      candidateEntry.reason = result.error;
+      globalThis.__kalp_llm_cache__ = {
+        model: null,
+        probedAt: now(),
+        modelsListed: 1,
+        pinned: true,
+        state: "key_invalid",
+        candidates: [candidateEntry],
+        lastForcedAt,
+        error: result.error || "Gemini API key is invalid",
+      };
+      throw new LlmError(
+        "API_KEY_INVALID",
+        result.error || "Gemini API key is invalid",
+        result.status,
+      );
+    }
+
+    candidateEntry.state = "failed";
+    candidateEntry.reason = result.error || "Probe failed";
     globalThis.__kalp_llm_cache__ = {
-      model: pinned,
-      probedAt: Date.now(),
+      model: null,
+      probedAt: now(),
       modelsListed: 1,
       pinned: true,
-      state: "available",
+      state: "unavailable",
+      candidates: [candidateEntry],
       lastForcedAt,
-      candidates: [
-        {
-          name: parsed.name,
-          version: parsed.version,
-          tier: parsed.tier,
-          preview: parsed.preview,
-          state: "selected",
-          reason: "Pinned via LLM_MODEL",
-        },
-      ],
+      error: `Pinned model '${pinned}' is unavailable: ${result.error}`,
     };
-    return pinned;
+
+    if (result.status === 429) {
+      throw new LlmError(
+        "RATE_LIMITED",
+        `Pinned model '${pinned}' is rate-limited or quota exceeded. Fix or unset LLM_MODEL in environment.`,
+        429,
+      );
+    }
+
+    throw new LlmError(
+      "NO_MODEL_AVAILABLE",
+      `Pinned model '${pinned}' is unavailable (${result.error || "probe failed"}). Fix or unset LLM_MODEL in environment.`,
+      result.status,
+    );
   }
 
   const cache = globalThis.__kalp_llm_cache__;
   const isCacheFresh =
     cache &&
+    !cache.pinned &&
     cache.model &&
     cache.state === "available" &&
-    Date.now() - cache.probedAt < MODEL_CACHE_TTL_MS;
+    now() - cache.probedAt < MODEL_CACHE_TTL_MS;
 
   if (!opts.force && isCacheFresh && cache.model) {
     if (!opts.exclude || !opts.exclude.includes(cache.model)) {
@@ -407,7 +521,7 @@ export async function selectModel(
     const state = isKeyInvalid ? "key_invalid" : "unavailable";
     globalThis.__kalp_llm_cache__ = {
       model: null,
-      probedAt: Date.now(),
+      probedAt: now(),
       modelsListed: 0,
       pinned: false,
       state,
@@ -417,20 +531,45 @@ export async function selectModel(
     };
     throw err;
   }
-  let ranked = rankModels(models);
+  const fullRanked = rankModels(models);
 
-  if (opts.exclude && opts.exclude.length > 0) {
-    ranked = ranked.filter((m) => !opts.exclude!.includes(m.name));
-  }
+  // Build candidates list from full ranked list before applying exclude
+  const candidates: CandidateStatus[] = fullRanked.map((r) => {
+    if (opts.exclude && opts.exclude.includes(r.name)) {
+      const statusReason = opts.runtimeFailureStatus
+        ? `HTTP ${opts.runtimeFailureStatus}`
+        : "HTTP 429";
+      return {
+        name: r.name,
+        version: r.version,
+        tier: r.tier,
+        preview: r.preview,
+        state: "failed" as CandidateState,
+        reason: `excluded after runtime failure (${statusReason})`,
+      };
+    }
+    return {
+      name: r.name,
+      version: r.version,
+      tier: r.tier,
+      preview: r.preview,
+      state: "untested" as CandidateState,
+    };
+  });
+
+  const ranked =
+    opts.exclude && opts.exclude.length > 0
+      ? fullRanked.filter((m) => !opts.exclude!.includes(m.name))
+      : fullRanked;
 
   if (ranked.length === 0) {
     globalThis.__kalp_llm_cache__ = {
       model: null,
-      probedAt: Date.now(),
+      probedAt: now(),
       modelsListed: models.length,
       pinned: false,
       state: "unavailable",
-      candidates: [],
+      candidates,
       lastForcedAt,
       error: "No compatible Gemini text generation models found",
     };
@@ -441,21 +580,22 @@ export async function selectModel(
   }
 
   const probePool = ranked.slice(0, 6);
-  const candidates: CandidateStatus[] = ranked.map((r) => ({
-    name: r.name,
-    version: r.version,
-    tier: r.tier,
-    preview: r.preview,
-    state: "untested" as CandidateState,
-  }));
-
   let selectedModel: string | null = null;
 
   for (let i = 0; i < probePool.length; i++) {
     const candidate = probePool[i];
     const candidateEntry = candidates.find((c) => c.name === candidate.name)!;
 
-    const result = await probeCandidate(candidate.name, apiKey);
+    // Check budget before probe
+    if (now() - startTime >= SELECTION_BUDGET_MS) {
+      break;
+    }
+
+    const result = await probeCandidate(candidate.name, apiKey, {
+      now,
+      startTime,
+      budgetMs: SELECTION_BUDGET_MS,
+    });
 
     if (result.ok) {
       selectedModel = candidate.name;
@@ -469,7 +609,7 @@ export async function selectModel(
       candidateEntry.reason = result.error;
       globalThis.__kalp_llm_cache__ = {
         model: null,
-        probedAt: Date.now(),
+        probedAt: now(),
         modelsListed: models.length,
         pinned: false,
         state: "key_invalid",
@@ -484,16 +624,24 @@ export async function selectModel(
     candidateEntry.reason = result.error || "Probe failed";
   }
 
+  if (now() - startTime >= SELECTION_BUDGET_MS) {
+    for (const c of candidates) {
+      if (c.state === "untested") {
+        c.reason = "selection time budget reached";
+      }
+    }
+  }
+
   if (!selectedModel) {
     globalThis.__kalp_llm_cache__ = {
       model: null,
-      probedAt: Date.now(),
+      probedAt: now(),
       modelsListed: models.length,
       pinned: false,
       state: "unavailable",
       candidates,
       lastForcedAt,
-      error: "All probed Gemini model candidates failed",
+      error: "All probed Gemini model candidates failed or budget reached",
     };
     throw new LlmError(
       "NO_MODEL_AVAILABLE",
@@ -503,7 +651,7 @@ export async function selectModel(
 
   globalThis.__kalp_llm_cache__ = {
     model: selectedModel,
-    probedAt: Date.now(),
+    probedAt: now(),
     modelsListed: models.length,
     pinned: false,
     state: "available",
@@ -522,8 +670,15 @@ async function callGeminiGenerate(
   apiKey: string,
   prompt: string,
   opts?: { system?: string; maxOutputTokens?: number; timeoutMs?: number },
-): Promise<{ ok: boolean; status: number; text?: string; error?: string }> {
+): Promise<{
+  ok: boolean;
+  status: number;
+  text?: string;
+  finishReason?: string;
+  error?: string;
+}> {
   const timeoutMs = opts?.timeoutMs ?? 60000;
+  const maxOutputTokens = opts?.maxOutputTokens ?? 8192;
   const backoffs = [500, 1500];
   let attempt = 0;
 
@@ -544,9 +699,7 @@ async function callGeminiGenerate(
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: {
               responseMimeType: "application/json",
-              ...(opts?.maxOutputTokens
-                ? { maxOutputTokens: opts.maxOutputTokens }
-                : {}),
+              maxOutputTokens,
             },
             ...(opts?.system
               ? { systemInstruction: { parts: [{ text: opts.system }] } }
@@ -560,8 +713,22 @@ async function callGeminiGenerate(
 
       if (response.ok) {
         const json = await response.json();
-        const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
-        return { ok: true, status: response.status, text };
+        const candidate = json.candidates?.[0];
+        const finishReason = candidate?.finishReason;
+        const parts = candidate?.content?.parts;
+        let text: string | undefined = undefined;
+        if (Array.isArray(parts)) {
+          const nonThoughtParts: string[] = [];
+          for (const p of parts) {
+            if (!p.thought && typeof p.text === "string") {
+              nonThoughtParts.push(p.text);
+            }
+          }
+          if (nonThoughtParts.length > 0) {
+            text = nonThoughtParts.join("");
+          }
+        }
+        return { ok: true, status: response.status, text, finishReason };
       }
 
       if (response.status === 401) {
@@ -644,22 +811,71 @@ export async function generateJson<T>(
   },
 ): Promise<{ data: T; model: string }> {
   const apiKey = getApiKey();
+  const pinned = getPinnedModel();
   const excludedModels: string[] = [];
+  const maxOutputTokens = opts?.maxOutputTokens ?? 8192;
+  const generateOpts = { ...opts, maxOutputTokens };
+
   let currentModel = await selectModel();
 
-  let response = await callGeminiGenerate(currentModel, apiKey, prompt, opts);
+  let response = await callGeminiGenerate(
+    currentModel,
+    apiKey,
+    prompt,
+    generateOpts,
+  );
 
-  // If candidate returns 429, 404, or 403, fallback to next best model once
+  // If finishReason is MAX_TOKENS, throw OUTPUT_TRUNCATED immediately without retry
+  if (response.finishReason === "MAX_TOKENS") {
+    throw new LlmError(
+      "OUTPUT_TRUNCATED",
+      "Model output was truncated because it reached maxOutputTokens limit. Raise maxOutputTokens to allow longer output.",
+    );
+  }
+
+  // If candidate returns 429, 404, or 403, fallback to next best model once (unless pinned)
   if (
     !response.ok &&
     (response.status === 429 ||
       response.status === 404 ||
       response.status === 403)
   ) {
+    if (pinned) {
+      if (response.status === 429) {
+        throw new LlmError(
+          "RATE_LIMITED",
+          `Pinned model '${currentModel}' is rate-limited or quota exceeded. Fix or unset LLM_MODEL in environment.`,
+          429,
+        );
+      }
+      throw new LlmError(
+        "NO_MODEL_AVAILABLE",
+        `Pinned model '${currentModel}' returned HTTP ${response.status}. Fix or unset LLM_MODEL in environment.`,
+        response.status,
+      );
+    }
+
     excludedModels.push(currentModel);
-    invalidateLlmCache();
-    currentModel = await selectModel({ force: true, exclude: excludedModels });
-    response = await callGeminiGenerate(currentModel, apiKey, prompt, opts);
+    currentModel = await selectModel({
+      force: true,
+      internal: true,
+      exclude: excludedModels,
+      runtimeFailureStatus: response.status,
+    });
+    response = await callGeminiGenerate(
+      currentModel,
+      apiKey,
+      prompt,
+      generateOpts,
+    );
+
+    if (response.finishReason === "MAX_TOKENS") {
+      throw new LlmError(
+        "OUTPUT_TRUNCATED",
+        "Model output was truncated because it reached maxOutputTokens limit. Raise maxOutputTokens to allow longer output.",
+      );
+    }
+
     if (!response.ok && response.status === 429) {
       throw new LlmError(
         "RATE_LIMITED",
@@ -714,8 +930,15 @@ export async function generateJson<T>(
     currentModel,
     apiKey,
     correctionPrompt,
-    opts,
+    generateOpts,
   );
+
+  if (retryResponse.finishReason === "MAX_TOKENS") {
+    throw new LlmError(
+      "OUTPUT_TRUNCATED",
+      "Model output was truncated because it reached maxOutputTokens limit. Raise maxOutputTokens to allow longer output.",
+    );
+  }
 
   if (!retryResponse.ok || !retryResponse.text) {
     throw new LlmError(

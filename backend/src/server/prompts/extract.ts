@@ -21,6 +21,13 @@ export const ExtractOutputSchema = z
     const seenKeys = new Set<string>();
     for (let i = 0; i < data.requirements.length; i++) {
       const key = data.requirements[i].key;
+      if (!/^REQ-\d+$/.test(key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Requirement key "${key}" must match format /^REQ-\\d+$/`,
+          path: ["requirements", i, "key"],
+        });
+      }
       if (seenKeys.has(key)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,

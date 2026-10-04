@@ -13,25 +13,59 @@ import {
 
 export const DECOMPOSE_PROMPT_VERSION = "decompose.v1";
 
+function validateDecomposeNodes(
+  nodes: Array<{ node_key: string; phase: string }>,
+  ctx: z.RefinementCtx,
+): void {
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(node.node_key)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `node_key "${node.node_key}" must match pattern /^[A-Za-z0-9][A-Za-z0-9._-]*$/`,
+        path: ["nodes", i, "node_key"],
+      });
+    }
+    if (
+      !node.phase ||
+      typeof node.phase !== "string" ||
+      node.phase.trim().length === 0
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "phase must be a non-empty string",
+        path: ["nodes", i, "phase"],
+      });
+    }
+  }
+}
+
 export const DecomposeOutputSchema = z
   .object({
     nodes: z.array(NodeSchema).min(1, "At least one node is required"),
     edges: z.array(EdgeSchema).default([]),
   })
   .superRefine((data, ctx) => {
+    validateDecomposeNodes(data.nodes, ctx);
     checkGraphIntegrity(data, ctx, { requireRequirementKey: true });
   });
 
-export function makeDecomposeOutputSchema(requirementKeys: string[]) {
+export function makeDecomposeOutputSchema(
+  requirementKeys: string[],
+  opts?: { requireCoverage?: boolean },
+) {
+  const requireCoverage = opts?.requireCoverage ?? true;
   return z
     .object({
       nodes: z.array(NodeSchema).min(1, "At least one node is required"),
       edges: z.array(EdgeSchema).default([]),
     })
     .superRefine((data, ctx) => {
+      validateDecomposeNodes(data.nodes, ctx);
       checkGraphIntegrity(data, ctx, {
         knownRequirementKeys: requirementKeys,
         requireRequirementKey: true,
+        requireFullCoverage: requireCoverage,
       });
     });
 }

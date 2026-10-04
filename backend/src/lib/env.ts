@@ -22,7 +22,12 @@ export const envSchema = z.object({
         "GITHUB_WEBHOOK_SECRET is required. Please provide a GitHub webhook secret.",
     })
     .min(1, "GITHUB_WEBHOOK_SECRET cannot be empty."),
-  LLM_MODEL: z.string().min(1).optional(),
+  LLM_MODEL: z.preprocess((val) => {
+    if (typeof val === "string" && val.trim() === "") {
+      return undefined;
+    }
+    return val;
+  }, z.string().min(1).optional()),
 });
 
 export type Env = z.infer<typeof envSchema>;

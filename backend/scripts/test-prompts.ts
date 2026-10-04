@@ -27,7 +27,9 @@ import {
   CRITERIA_PROMPT_VERSION,
   CriteriaOutputSchema,
   makeCriteriaSchema,
+  unwrapCriteria,
 } from "../src/server/prompts/criteria";
+import { PROMPT_VERSIONS, stageMeta } from "../src/server/prompts/index";
 
 let failed = false;
 
@@ -286,8 +288,6 @@ async function runPromptTests() {
     "status",
     "files",
     "explanation",
-    "acceptance",
-    "tests",
   ];
   const hasAllFields = requiredFields.every((field) =>
     decompPrompt.includes(field),
@@ -326,6 +326,16 @@ async function runPromptTests() {
   const asksForAcceptanceInExample = jsonExample.includes('"acceptance"');
   const asksForTestsInExample = jsonExample.includes('"tests"');
 
+  // C1: Verify decompose prompt never lists acceptance or tests as allowed output fields
+  const fieldRulesLine =
+    decompPrompt.split("\n").find((l) => l.includes("matching the schema:")) ??
+    "";
+  const fieldRulesListsAcceptanceOrTests =
+    fieldRulesLine.includes("acceptance") || fieldRulesLine.includes("tests");
+  const explicitlyForbidsAcceptanceAndTests = decompPrompt.includes(
+    "Do not output acceptance or tests",
+  );
+
   if (
     hasDirectionText &&
     hasAllEdgeTypes &&
@@ -334,10 +344,12 @@ async function runPromptTests() {
     !mentionsRequirementId &&
     !asksForUuids &&
     !asksForAcceptanceInExample &&
-    !asksForTestsInExample
+    !asksForTestsInExample &&
+    !fieldRulesListsAcceptanceOrTests &&
+    explicitlyForbidsAcceptanceAndTests
   ) {
     pass(
-      "Check 4: Decompose prompt contains edge direction, field names, edge types, no requirement_id, and no acceptance/tests in JSON example",
+      "Check 4: Decompose prompt contains edge direction, field names, edge types, no requirement_id, no acceptance/tests in allowed fields or JSON example",
     );
   } else {
     fail("Check 4: Decompose prompt validation failed", {
@@ -349,6 +361,8 @@ async function runPromptTests() {
       asksForUuids,
       asksForAcceptanceInExample,
       asksForTestsInExample,
+      fieldRulesListsAcceptanceOrTests,
+      explicitlyForbidsAcceptanceAndTests,
     });
   }
 
@@ -383,6 +397,20 @@ async function runPromptTests() {
     schemasPassed = false;
   }
 
+  // C5: ExtractOutputSchema rejects invalid requirement key format
+  const invalidExtractBadKeyFormat = {
+    requirements: [
+      { key: "REQ-AUTH", title: "Auth" },
+      { key: "req-1", title: "Lower" },
+    ],
+  };
+  if (ExtractOutputSchema.safeParse(invalidExtractBadKeyFormat).success) {
+    fail(
+      "Check 5c5 (extract): Invalid requirement key format was not rejected",
+    );
+    schemasPassed = false;
+  }
+
   // ArchitectureOutputSchema & makeArchitectureOutputSchema
   const validArch = {
     modules: [
@@ -390,6 +418,21 @@ async function runPromptTests() {
         name: "AuthService",
         responsibility: "Session management",
         requirement_keys: ["REQ-1"],
+      },
+    ],
+    interactions: ["AuthService queries database"],
+  };
+  const validArchBoth = {
+    modules: [
+      {
+        name: "AuthService",
+        responsibility: "Session management",
+        requirement_keys: ["REQ-1"],
+      },
+      {
+        name: "DashboardService",
+        responsibility: "Metrics view",
+        requirement_keys: ["REQ-2"],
       },
     ],
     interactions: ["AuthService queries database"],
@@ -416,6 +459,11 @@ async function runPromptTests() {
         responsibility: "Session management",
         requirement_keys: ["REQ-UNKNOWN"],
       },
+      {
+        name: "DashboardService",
+        responsibility: "Metrics view",
+        requirement_keys: ["REQ-2"],
+      },
     ],
     interactions: [],
   };
@@ -423,8 +471,26 @@ async function runPromptTests() {
     fail("Check 5d (architecture): Unknown requirement key was not rejected");
     schemasPassed = false;
   }
-  if (!archSchemaWithReqs.safeParse(validArch).success) {
+  if (!archSchemaWithReqs.safeParse(validArchBoth).success) {
     fail("Check 5d (architecture): Valid requirement keys rejected");
+    schemasPassed = false;
+  }
+
+  // C4: makeArchitectureOutputSchema requires full coverage by default
+  if (archSchemaWithReqs.safeParse(validArch).success) {
+    fail(
+      "Check 5c4 (architecture): Incomplete coverage was not rejected by default",
+    );
+    schemasPassed = false;
+  }
+  const archSchemaNoCoverage = makeArchitectureOutputSchema(
+    ["REQ-1", "REQ-2"],
+    { requireCoverage: false },
+  );
+  if (!archSchemaNoCoverage.safeParse(validArch).success) {
+    fail(
+      "Check 5c4 (architecture): requireCoverage: false rejected partial coverage",
+    );
     schemasPassed = false;
   }
 
@@ -503,6 +569,38 @@ async function runPromptTests() {
     schemasPassed = false;
   }
 
+  // C5: Decompose schemas reject invalid node_key format or empty phase
+  const invalidDecomposeKeyFormat = {
+    nodes: [
+      {
+        node_key: "-01.1",
+        phase: "01",
+        title: "Database schema",
+        requirement_key: "REQ-1",
+      },
+    ],
+    edges: [],
+  };
+  const invalidDecomposeEmptyPhase = {
+    nodes: [
+      {
+        node_key: "01.1",
+        phase: "   ",
+        title: "Database schema",
+        requirement_key: "REQ-1",
+      },
+    ],
+    edges: [],
+  };
+  if (DecomposeOutputSchema.safeParse(invalidDecomposeKeyFormat).success) {
+    fail("Check 5c5 (decompose): Invalid node_key format was not rejected");
+    schemasPassed = false;
+  }
+  if (DecomposeOutputSchema.safeParse(invalidDecomposeEmptyPhase).success) {
+    fail("Check 5c5 (decompose): Empty phase was not rejected");
+    schemasPassed = false;
+  }
+
   // (b) makeDecomposeOutputSchema rejects an unknown requirement_key and a DEPENDS_ON cycle
   const decomposeSchemaWithReqs = makeDecomposeOutputSchema(["REQ-1"]);
   const invalidDecomposeUnknownReq = {
@@ -546,6 +644,25 @@ async function runPromptTests() {
   if (decomposeSchemaWithReqs.safeParse(invalidDecomposeCycle).success) {
     fail(
       "Check 5b (decompose): DEPENDS_ON cycle was not rejected by makeDecomposeOutputSchema",
+    );
+    schemasPassed = false;
+  }
+
+  // C4: makeDecomposeOutputSchema requires full coverage by default
+  const decomposeSchemaTwoReqs = makeDecomposeOutputSchema(["REQ-1", "REQ-2"]);
+  if (decomposeSchemaTwoReqs.safeParse(validDecompose).success) {
+    fail(
+      "Check 5c4 (decompose): Incomplete coverage was not rejected by default",
+    );
+    schemasPassed = false;
+  }
+  const decomposeSchemaNoCoverage = makeDecomposeOutputSchema(
+    ["REQ-1", "REQ-2"],
+    { requireCoverage: false },
+  );
+  if (!decomposeSchemaNoCoverage.safeParse(validDecompose).success) {
+    fail(
+      "Check 5c4 (decompose): requireCoverage: false rejected partial coverage",
     );
     schemasPassed = false;
   }
@@ -704,6 +821,143 @@ async function runPromptTests() {
     pass(
       "Check 7: escapeDelimiterTags neutralizes spaced, newline, attribute, and mixed-case tag variants",
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check 8 (C2): criteria.ts accepts description and explanation, serializes properly
+  // ---------------------------------------------------------------------------
+  const critInput1 = buildCriteriaMessages([
+    {
+      node_key: "01.1",
+      title: "Task with explanation only",
+      explanation: "Expl text",
+    },
+    {
+      node_key: "01.2",
+      title: "Task with description and explanation",
+      description: "Desc text",
+      explanation: "Ignored expl text",
+    },
+    {
+      node_key: "01.3",
+      title: "Task with neither",
+    },
+  ]);
+  const critPrompt1 = critInput1.prompt;
+  const jsonMatch = critPrompt1.match(
+    /<user_input>\n([\s\S]*?)\n<\/user_input>/,
+  );
+  if (!jsonMatch) {
+    fail(
+      "Check 8 (criteria serialization): Could not find serialized nodes in prompt",
+    );
+  } else {
+    try {
+      const parsedNodes = JSON.parse(jsonMatch[1]);
+      const n1 = parsedNodes.find(
+        (n: { node_key: string }) => n.node_key === "01.1",
+      );
+      const n2 = parsedNodes.find(
+        (n: { node_key: string }) => n.node_key === "01.2",
+      );
+      const n3 = parsedNodes.find(
+        (n: { node_key: string }) => n.node_key === "01.3",
+      );
+
+      if (
+        n1?.description === "Expl text" &&
+        n2?.description === "Desc text" &&
+        n3?.description === null &&
+        Array.isArray(n1.files)
+      ) {
+        pass(
+          "Check 8: criteria.ts serializes description = description ?? explanation ?? null",
+        );
+      } else {
+        fail("Check 8: criteria serialization mismatch", { n1, n2, n3 });
+      }
+    } catch (e) {
+      fail("Check 8: failed to parse serialized JSON from prompt", e);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check 9 (C3): criteria.ts unwrapCriteria single-key rule and node keyed "criteria"
+  // ---------------------------------------------------------------------------
+  // (a) Single-key wrapper unwraps when "criteria" is not an expected node key
+  const wrappedCrit = {
+    criteria: {
+      "01.1": { acceptance: ["Accepted"], tests: ["Tested"] },
+    },
+  };
+  const unwrapped1 = unwrapCriteria(wrappedCrit, ["01.1"]);
+  const makeCrit1 = makeCriteriaSchema(["01.1"]);
+  const parseWrappedRes = makeCrit1.safeParse(wrappedCrit);
+  if (!parseWrappedRes.success) {
+    fail(
+      "Check 9: makeCriteriaSchema failed to unwrap { criteria: { '01.1': ... } }",
+    );
+  } else if (!("01.1" in (unwrapped1 as Record<string, unknown>))) {
+    fail("Check 9: unwrapCriteria did not unwrap single-key criteria object");
+  }
+
+  // (b) Node actually keyed "criteria" is NOT unwrapped
+  const nodeKeyedCriteria = {
+    criteria: {
+      acceptance: ["Accept node criteria"],
+      tests: ["Test node criteria"],
+    },
+  };
+  const unwrappedCriteriaNode = unwrapCriteria(nodeKeyedCriteria, ["criteria"]);
+  const makeCritCriteriaNode = makeCriteriaSchema(["criteria"]);
+  const parseCriteriaNodeRes =
+    makeCritCriteriaNode.safeParse(nodeKeyedCriteria);
+  if (!parseCriteriaNodeRes.success) {
+    fail(
+      "Check 9: makeCriteriaSchema failed to accept node actually keyed 'criteria'",
+      parseCriteriaNodeRes.error,
+    );
+  } else if (unwrappedCriteriaNode !== nodeKeyedCriteria) {
+    fail("Check 9: unwrapCriteria incorrectly unwrapped node keyed 'criteria'");
+  } else {
+    pass(
+      "Check 9: unwrapCriteria respects single-key rule and preserves node keyed 'criteria'",
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check 10 (C6): PROMPT_VERSIONS and stageMeta helper
+  // ---------------------------------------------------------------------------
+  const versionsMatch =
+    PROMPT_VERSIONS.extract === EXTRACT_PROMPT_VERSION &&
+    PROMPT_VERSIONS.architecture === ARCHITECTURE_PROMPT_VERSION &&
+    PROMPT_VERSIONS.decompose === DECOMPOSE_PROMPT_VERSION &&
+    PROMPT_VERSIONS.criteria === CRITERIA_PROMPT_VERSION;
+
+  const meta1 = stageMeta("extract", "mock-model");
+  const meta2 = stageMeta("architecture", "mock-model-2");
+  const meta3 = stageMeta("decompose", "mock-model-3");
+  const meta4 = stageMeta("criteria", "mock-model-4");
+
+  if (
+    versionsMatch &&
+    meta1.prompt_version === EXTRACT_PROMPT_VERSION &&
+    meta1.model === "mock-model" &&
+    meta2.prompt_version === ARCHITECTURE_PROMPT_VERSION &&
+    meta3.prompt_version === DECOMPOSE_PROMPT_VERSION &&
+    meta4.prompt_version === CRITERIA_PROMPT_VERSION
+  ) {
+    pass(
+      "Check 10: PROMPT_VERSIONS and stageMeta correctly match prompt versions",
+    );
+  } else {
+    fail("Check 10: PROMPT_VERSIONS or stageMeta mismatch", {
+      versionsMatch,
+      meta1,
+      meta2,
+      meta3,
+      meta4,
+    });
   }
 
   console.log("\n-------------------------------------------");

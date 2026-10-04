@@ -372,6 +372,40 @@ export type Edge = z.infer<typeof BaseEdgeSchema>;
 export interface GraphIntegrityOptions {
   knownRequirementKeys?: string[];
   requireRequirementKey?: boolean;
+  requireFullCoverage?: boolean;
+}
+
+/**
+ * Returns requirement keys that no node references via requirement_key.
+ */
+export function findUncoveredRequirements(
+  requirementKeys: string[],
+  nodes: Array<{ requirement_key?: string | null }>,
+): string[] {
+  const coveredKeys = new Set<string>();
+  for (const node of nodes) {
+    if (node.requirement_key && node.requirement_key.trim().length > 0) {
+      coveredKeys.add(node.requirement_key.trim());
+    }
+  }
+  return requirementKeys.filter((key) => !coveredKeys.has(key.trim()));
+}
+
+/**
+ * Sorts nodes by phase using numeric-aware string comparison (localeCompare with numeric: true).
+ * Stable sort, tie-broken by original index. Does not reject or mutate input.
+ */
+export function sortNodesByPhase<T extends { phase: string }>(nodes: T[]): T[] {
+  return nodes
+    .map((node, index) => ({ node, index }))
+    .sort((a, b) => {
+      const cmp = a.node.phase.localeCompare(b.node.phase, undefined, {
+        numeric: true,
+      });
+      if (cmp !== 0) return cmp;
+      return a.index - b.index;
+    })
+    .map((item) => item.node);
 }
 
 /**
@@ -462,13 +496,26 @@ export function findDependsOnCycle(
 
 /**
  * Shared graph integrity check used by GraphSchema and decompose schemas.
+ *
+ * Requirements checking precedence:
+ * - If options.knownRequirementKeys is provided, it takes precedence over input.requirements
+ *   for unknown-requirement_key validation and coverage checks.
+ * - Otherwise input.requirements is used if present.
+ * - Otherwise requirement validation is skipped.
+ *
+ * If options.requireFullCoverage is true, validates that every requirement key is referenced
+ * by at least one node.
+ *
+ * If a node has both requirement_id and requirement_key and input.requirements contains an entry
+ * with that id, verifies that the requirement's key matches the node's requirement_key.
  */
 export function checkGraphIntegrity(
   input: {
-    requirements?: Array<{ key: string }>;
+    requirements?: Array<{ id?: string; key: string }>;
     nodes: Array<{
       node_key: string;
       id?: string;
+      requirement_id?: string | null;
       requirement_key?: string | null;
     }>;
     edges: Array<{
@@ -497,13 +544,27 @@ export function checkGraphIntegrity(
     }
   }
 
-  // 2. Reject duplicate node_key and validate requirement_key references
+  // Precedence: options.knownRequirementKeys takes precedence over input.requirements
+  const effectiveReqKeys =
+    options?.knownRequirementKeys !== undefined
+      ? options.knownRequirementKeys
+      : input.requirements
+        ? input.requirements.map((r) => r.key)
+        : null;
+  const knownReqKeys = effectiveReqKeys ? new Set(effectiveReqKeys) : null;
+
+  // Build requirement id -> key lookup map for consistency checks
+  const reqIdToKey = new Map<string, string>();
+  if (input.requirements) {
+    for (const r of input.requirements) {
+      if (r.id) {
+        reqIdToKey.set(r.id, r.key);
+      }
+    }
+  }
+
+  // 2. Reject duplicate node_key and validate requirement_key references and id-key consistency
   const seenNodeKeys = new Set<string>();
-  const knownReqKeys = input.requirements
-    ? new Set(input.requirements.map((r) => r.key))
-    : options?.knownRequirementKeys
-      ? new Set(options.knownRequirementKeys)
-      : null;
 
   for (let i = 0; i < input.nodes.length; i++) {
     const node = input.nodes[i];
@@ -536,6 +597,37 @@ export function checkGraphIntegrity(
         code: z.ZodIssueCode.custom,
         message: `Node ${node.node_key} references unknown requirement_key ${node.requirement_key}`,
         path: ["nodes", i, "requirement_key"],
+      });
+    }
+
+    // B3: Check requirement_id vs requirement_key consistency
+    if (
+      node.requirement_id &&
+      node.requirement_key &&
+      reqIdToKey.has(node.requirement_id)
+    ) {
+      const expectedKey = reqIdToKey.get(node.requirement_id)!;
+      if (expectedKey !== node.requirement_key) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Node ${node.node_key} requirement_id "${node.requirement_id}" (maps to "${expectedKey}") does not match requirement_key "${node.requirement_key}"`,
+          path: ["nodes", i, "requirement_key"],
+        });
+      }
+    }
+  }
+
+  // B1: Check requirement full coverage if requested
+  if (options?.requireFullCoverage && effectiveReqKeys) {
+    const uncovered = findUncoveredRequirements(effectiveReqKeys, input.nodes);
+    for (const uncoveredKey of uncovered) {
+      const reqIndex = input.requirements
+        ? input.requirements.findIndex((r) => r.key === uncoveredKey)
+        : -1;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Requirement ${uncoveredKey} is not covered by any node`,
+        path: reqIndex >= 0 ? ["requirements", reqIndex] : ["nodes"],
       });
     }
   }

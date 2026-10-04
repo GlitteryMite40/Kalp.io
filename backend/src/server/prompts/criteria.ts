@@ -18,15 +18,26 @@ export const StrictNodeCriteriaSchema = z.object({
 
 export const NodeCriteriaSchema = StrictNodeCriteriaSchema;
 
-function unwrapCriteria(val: unknown): unknown {
+export function unwrapCriteria(
+  val: unknown,
+  expectedKeys?: Set<string> | string[],
+): unknown {
   if (typeof val === "object" && val !== null && !Array.isArray(val)) {
-    const obj = val as Record<string, unknown>;
-    if (
-      obj.criteria &&
-      typeof obj.criteria === "object" &&
-      !Array.isArray(obj.criteria)
-    ) {
-      return obj.criteria;
+    const keys = Object.keys(val);
+    if (keys.length === 1 && keys[0] === "criteria") {
+      const expectedSet = Array.isArray(expectedKeys)
+        ? new Set(expectedKeys)
+        : expectedKeys;
+      if (!expectedSet || !expectedSet.has("criteria")) {
+        const obj = val as Record<string, unknown>;
+        if (
+          obj.criteria &&
+          typeof obj.criteria === "object" &&
+          !Array.isArray(obj.criteria)
+        ) {
+          return obj.criteria;
+        }
+      }
     }
   }
   return val;
@@ -39,7 +50,7 @@ export const CriteriaMapSchema = z
   });
 
 export const CriteriaOutputSchema = z.preprocess(
-  unwrapCriteria,
+  (val) => unwrapCriteria(val),
   CriteriaMapSchema,
 );
 
@@ -53,7 +64,7 @@ export function makeCriteriaSchema(nodeKeys: string[]) {
   const expectedKeys = new Set(nodeKeys);
 
   return z.preprocess(
-    unwrapCriteria,
+    (val) => unwrapCriteria(val, expectedKeys),
     z.record(z.string(), StrictNodeCriteriaSchema).superRefine((data, ctx) => {
       const dataKeys = Object.keys(data);
       if (dataKeys.length === 0) {
@@ -94,27 +105,31 @@ const CRITERIA_SYSTEM_MESSAGE = `${BASE_SYSTEM_GUARD}
 Task: For each graph node provided in <user_input>, generate verifiable acceptance criteria and test specifications.
 Output must be keyed by node_key. Do not define new nodes.`;
 
+export type CriteriaInputNode = {
+  node_key: string;
+  title: string;
+  description?: string | null;
+  explanation?: string | null;
+  files?: string[];
+};
+
+export type CriteriaInput =
+  | {
+      nodes: CriteriaInputNode[];
+    }
+  | CriteriaInputNode[];
+
 /**
  * Builds system and user prompt messages for the criteria stage.
  */
-export function buildCriteriaMessages(
-  input:
-    | {
-        nodes: Array<{
-          node_key: string;
-          title: string;
-          description?: string | null;
-          files?: string[];
-        }>;
-      }
-    | Array<{
-        node_key: string;
-        title: string;
-        description?: string | null;
-        files?: string[];
-      }>,
-): PromptMessages {
+export function buildCriteriaMessages(input: CriteriaInput): PromptMessages {
   const nodeList = Array.isArray(input) ? input : input.nodes;
+  const serializedNodes = nodeList.map((n) => ({
+    node_key: n.node_key,
+    title: n.title,
+    description: n.description ?? n.explanation ?? null,
+    files: n.files ?? [],
+  }));
 
   const prompt = `For each node provided in the delimited block below, define:
 1. acceptance: Array of concrete, verifiable acceptance criteria strings.
@@ -137,7 +152,7 @@ Required JSON output format:
   }
 }
 
-${wrapUserInput(JSON.stringify(nodeList, null, 2))}`;
+${wrapUserInput(JSON.stringify(serializedNodes, null, 2))}`;
 
   return {
     system: CRITERIA_SYSTEM_MESSAGE,
