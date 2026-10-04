@@ -7,7 +7,8 @@ const INITIAL_NODES: BuildGraphNode[] = [
   {
     id: "node-1",
     title: "Supabase Schema & RLS",
-    description: "PostgreSQL tables for projects, graphs, nodes, and Row-Level Security policies.",
+    description:
+      "PostgreSQL tables for projects, graphs, nodes, and Row-Level Security policies.",
     phase: "Phase 1: Foundation",
     type: "database",
     status: "ready",
@@ -17,7 +18,8 @@ const INITIAL_NODES: BuildGraphNode[] = [
   {
     id: "node-2",
     title: "Session & Auth Gateway",
-    description: "Stateless JWT authentication and rate-limited API verification headers.",
+    description:
+      "Stateless JWT authentication and rate-limited API verification headers.",
     phase: "Phase 1: Foundation",
     type: "core",
     status: "ready",
@@ -27,7 +29,8 @@ const INITIAL_NODES: BuildGraphNode[] = [
   {
     id: "node-3",
     title: "LLM Graph Decomposition Engine",
-    description: "Serverless prompt pipeline that breaks requirement docs into acyclic DAGs.",
+    description:
+      "Serverless prompt pipeline that breaks requirement docs into acyclic DAGs.",
     phase: "Phase 2: Core Engine",
     type: "api",
     status: "in_progress",
@@ -37,7 +40,8 @@ const INITIAL_NODES: BuildGraphNode[] = [
   {
     id: "node-4",
     title: "Zod Schema & Cycle Validator",
-    description: "Strict payload parsing, cycle detection, and topological sorting validation.",
+    description:
+      "Strict payload parsing, cycle detection, and topological sorting validation.",
     phase: "Phase 2: Core Engine",
     type: "core",
     status: "ready",
@@ -47,7 +51,8 @@ const INITIAL_NODES: BuildGraphNode[] = [
   {
     id: "node-5",
     title: "React Flow Dynamic Canvas",
-    description: "Interactive visual DAG canvas with custom nodes, mini-map, and layout controls.",
+    description:
+      "Interactive visual DAG canvas with custom nodes, mini-map, and layout controls.",
     phase: "Phase 3: Interactive UI",
     type: "ui",
     status: "planned",
@@ -57,7 +62,8 @@ const INITIAL_NODES: BuildGraphNode[] = [
   {
     id: "node-6",
     title: "GitHub / Ticket Export Dispatcher",
-    description: "Generates GitHub Issues, linear tickets, and PR scaffolds from graph steps.",
+    description:
+      "Generates GitHub Issues, linear tickets, and PR scaffolds from graph steps.",
     phase: "Phase 3: Interactive UI",
     type: "integration",
     status: "planned",
@@ -67,26 +73,61 @@ const INITIAL_NODES: BuildGraphNode[] = [
 ];
 
 const STATUS_CONFIG = {
-  ready: { label: "Ready to Build", color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" },
-  in_progress: { label: "In Progress", color: "bg-amber-500/10 text-amber-400 border-amber-500/30" },
-  planned: { label: "Waiting Dependencies", color: "bg-zinc-500/10 text-zinc-400 border-zinc-500/30" },
-  blocked: { label: "Blocked", color: "bg-rose-500/10 text-rose-400 border-rose-500/30" },
+  ready: {
+    label: "Ready to Build",
+    color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+  },
+  in_progress: {
+    label: "In Progress",
+    color: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+  },
+  planned: {
+    label: "Waiting Dependencies",
+    color: "bg-zinc-500/10 text-zinc-400 border-zinc-500/30",
+  },
+  blocked: {
+    label: "Blocked",
+    color: "bg-rose-500/10 text-rose-400 border-rose-500/30",
+  },
 };
 
 const TYPE_CONFIG = {
-  database: { badge: "DB", color: "text-emerald-400 border-emerald-500/30 bg-emerald-500/10" },
-  core: { badge: "CORE", color: "text-blue-400 border-blue-500/30 bg-blue-500/10" },
-  api: { badge: "API", color: "text-indigo-400 border-indigo-500/30 bg-indigo-500/10" },
-  ui: { badge: "UI", color: "text-purple-400 border-purple-500/30 bg-purple-500/10" },
-  integration: { badge: "INTG", color: "text-cyan-400 border-cyan-500/30 bg-cyan-500/10" },
-  feature: { badge: "FEAT", color: "text-amber-400 border-amber-500/30 bg-amber-500/10" },
+  database: {
+    badge: "DB",
+    color: "text-emerald-400 border-emerald-500/30 bg-emerald-500/10",
+  },
+  core: {
+    badge: "CORE",
+    color: "text-blue-400 border-blue-500/30 bg-blue-500/10",
+  },
+  api: {
+    badge: "API",
+    color: "text-indigo-400 border-indigo-500/30 bg-indigo-500/10",
+  },
+  ui: {
+    badge: "UI",
+    color: "text-purple-400 border-purple-500/30 bg-purple-500/10",
+  },
+  integration: {
+    badge: "INTG",
+    color: "text-cyan-400 border-cyan-500/30 bg-cyan-500/10",
+  },
+  feature: {
+    badge: "FEAT",
+    color: "text-amber-400 border-amber-500/30 bg-amber-500/10",
+  },
 };
 
 export default function GraphPreview() {
-  const [selectedNode, setSelectedNode] = useState<BuildGraphNode>(INITIAL_NODES[2]);
+  const [selectedNode, setSelectedNode] = useState<BuildGraphNode>(
+    INITIAL_NODES[2],
+  );
 
   return (
-    <section id="graph-preview" className="py-16 md:py-24 border-t border-zinc-900 bg-zinc-950/40">
+    <section
+      id="graph-preview"
+      className="py-16 md:py-24 border-t border-zinc-900 bg-zinc-950/40"
+    >
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
           <div>
@@ -97,13 +138,15 @@ export default function GraphPreview() {
               Live Dependency Topology
             </h2>
             <p className="mt-2 text-sm text-zinc-400 max-w-xl">
-              Inspect how Kalp.io orders prerequisites, identifies critical execution paths, and prevents circular blockers.
+              Inspect how Kalp.io orders prerequisites, identifies critical
+              execution paths, and prevents circular blockers.
             </p>
           </div>
 
           <div className="flex items-center gap-3 text-xs text-zinc-400 bg-zinc-900/80 p-2 rounded-xl border border-zinc-800">
             <span className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-emerald-400" /> Complete / Ready
+              <span className="h-2 w-2 rounded-full bg-emerald-400" /> Complete
+              / Ready
             </span>
             <span className="flex items-center gap-1.5">
               <span className="h-2 w-2 rounded-full bg-amber-400" /> In Progress
@@ -144,15 +187,23 @@ export default function GraphPreview() {
                         }`}
                       >
                         <div className="flex items-center justify-between mb-2">
-                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-mono font-bold border ${type.color}`}>
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-[10px] font-mono font-bold border ${type.color}`}
+                          >
                             {type.badge}
                           </span>
-                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${status.color}`}>
+                          <span
+                            className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${status.color}`}
+                          >
                             {status.label}
                           </span>
                         </div>
-                        <h4 className="text-sm font-semibold text-white">{node.title}</h4>
-                        <p className="mt-1 text-xs text-zinc-400 line-clamp-2">{node.description}</p>
+                        <h4 className="text-sm font-semibold text-white">
+                          {node.title}
+                        </h4>
+                        <p className="mt-1 text-xs text-zinc-400 line-clamp-2">
+                          {node.description}
+                        </p>
                       </div>
                     );
                   })}
@@ -185,15 +236,23 @@ export default function GraphPreview() {
                         }`}
                       >
                         <div className="flex items-center justify-between mb-2">
-                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-mono font-bold border ${type.color}`}>
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-[10px] font-mono font-bold border ${type.color}`}
+                          >
                             {type.badge}
                           </span>
-                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${status.color}`}>
+                          <span
+                            className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${status.color}`}
+                          >
                             {status.label}
                           </span>
                         </div>
-                        <h4 className="text-sm font-semibold text-white">{node.title}</h4>
-                        <p className="mt-1 text-xs text-zinc-400 line-clamp-2">{node.description}</p>
+                        <h4 className="text-sm font-semibold text-white">
+                          {node.title}
+                        </h4>
+                        <p className="mt-1 text-xs text-zinc-400 line-clamp-2">
+                          {node.description}
+                        </p>
                       </div>
                     );
                   })}
@@ -226,15 +285,23 @@ export default function GraphPreview() {
                         }`}
                       >
                         <div className="flex items-center justify-between mb-2">
-                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-mono font-bold border ${type.color}`}>
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-[10px] font-mono font-bold border ${type.color}`}
+                          >
                             {type.badge}
                           </span>
-                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${status.color}`}>
+                          <span
+                            className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${status.color}`}
+                          >
                             {status.label}
                           </span>
                         </div>
-                        <h4 className="text-sm font-semibold text-white">{node.title}</h4>
-                        <p className="mt-1 text-xs text-zinc-400 line-clamp-2">{node.description}</p>
+                        <h4 className="text-sm font-semibold text-white">
+                          {node.title}
+                        </h4>
+                        <p className="mt-1 text-xs text-zinc-400 line-clamp-2">
+                          {node.description}
+                        </p>
                       </div>
                     );
                   })}
@@ -249,31 +316,43 @@ export default function GraphPreview() {
               <span className="text-xs font-mono font-bold tracking-wider text-zinc-400 uppercase">
                 Node Inspector
               </span>
-              <span className="text-xs font-mono text-indigo-400">{selectedNode.id}</span>
+              <span className="text-xs font-mono text-indigo-400">
+                {selectedNode.id}
+              </span>
             </div>
 
             <div className="space-y-4">
               <div>
-                <h3 className="text-lg font-bold text-white">{selectedNode.title}</h3>
-                <p className="text-xs text-zinc-400 mt-1">{selectedNode.phase}</p>
+                <h3 className="text-lg font-bold text-white">
+                  {selectedNode.title}
+                </h3>
+                <p className="text-xs text-zinc-400 mt-1">
+                  {selectedNode.phase}
+                </p>
               </div>
 
               <div>
                 <label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">
                   Description
                 </label>
-                <p className="mt-1 text-sm text-zinc-300 leading-relaxed">{selectedNode.description}</p>
+                <p className="mt-1 text-sm text-zinc-300 leading-relaxed">
+                  {selectedNode.description}
+                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3 pt-2">
                 <div className="rounded-xl border border-zinc-800 bg-zinc-950/70 p-3">
-                  <span className="text-[10px] text-zinc-500 uppercase font-medium">Estimated Time</span>
+                  <span className="text-[10px] text-zinc-500 uppercase font-medium">
+                    Estimated Time
+                  </span>
                   <div className="text-base font-semibold text-white mt-1">
                     {selectedNode.estimatedHours} hours
                   </div>
                 </div>
                 <div className="rounded-xl border border-zinc-800 bg-zinc-950/70 p-3">
-                  <span className="text-[10px] text-zinc-500 uppercase font-medium">Type</span>
+                  <span className="text-[10px] text-zinc-500 uppercase font-medium">
+                    Type
+                  </span>
                   <div className="text-base font-semibold text-indigo-300 capitalize mt-1">
                     {selectedNode.type}
                   </div>

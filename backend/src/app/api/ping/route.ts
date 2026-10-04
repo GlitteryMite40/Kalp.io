@@ -8,6 +8,6 @@ export async function GET() {
       timestamp: new Date().toISOString(),
       service: "kalp-io-backend",
     },
-    { status: 200 }
+    { status: 200 },
   );
 }

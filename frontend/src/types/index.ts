@@ -1,6 +1,7 @@
 export type NodeStatus = "planned" | "in_progress" | "ready" | "blocked";
 
-export type NodeType = "core" | "feature" | "database" | "api" | "ui" | "integration";
+export type NodeType =
+  "core" | "feature" | "database" | "api" | "ui" | "integration";
 
 export interface BuildGraphNode {
   id: string;

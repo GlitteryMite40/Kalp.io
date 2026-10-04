@@ -13,7 +13,11 @@ export interface ApiResponse<T = unknown> {
   meta?: Record<string, unknown>;
 }
 
-export function jsonSuccess<T>(data: T, status = HTTP_STATUS.OK, meta?: Record<string, unknown>) {
+export function jsonSuccess<T>(
+  data: T,
+  status = HTTP_STATUS.OK,
+  meta?: Record<string, unknown>,
+) {
   const body: ApiResponse<T> = {
     success: true,
     data,
@@ -35,7 +39,8 @@ export function jsonError(error: unknown) {
     return NextResponse.json(body, { status: error.statusCode });
   }
 
-  const message = error instanceof Error ? error.message : "Internal Server Error";
+  const message =
+    error instanceof Error ? error.message : "Internal Server Error";
   const body: ApiResponse = {
     success: false,
     error: {

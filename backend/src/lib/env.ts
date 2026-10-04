@@ -1,17 +1,27 @@
 import { z } from "zod";
 
 export const envSchema = z.object({
-  NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
+  NODE_ENV: z
+    .enum(["development", "production", "test"])
+    .default("development"),
   PORT: z.string().default("3001"),
-  LLM_API_KEY: z.string({
-    error: "LLM_API_KEY is required. Please provide a valid LLM API key.",
-  }).min(1, "LLM_API_KEY cannot be empty."),
-  DATABASE_URL: z.string({
-    error: "DATABASE_URL is required. Please provide a PostgreSQL connection string.",
-  }).min(1, "DATABASE_URL cannot be empty."),
-  GITHUB_WEBHOOK_SECRET: z.string({
-    error: "GITHUB_WEBHOOK_SECRET is required. Please provide a GitHub webhook secret.",
-  }).min(1, "GITHUB_WEBHOOK_SECRET cannot be empty."),
+  LLM_API_KEY: z
+    .string({
+      error: "LLM_API_KEY is required. Please provide a valid LLM API key.",
+    })
+    .min(1, "LLM_API_KEY cannot be empty."),
+  DATABASE_URL: z
+    .string({
+      error:
+        "DATABASE_URL is required. Please provide a PostgreSQL connection string.",
+    })
+    .min(1, "DATABASE_URL cannot be empty."),
+  GITHUB_WEBHOOK_SECRET: z
+    .string({
+      error:
+        "GITHUB_WEBHOOK_SECRET is required. Please provide a GitHub webhook secret.",
+    })
+    .min(1, "GITHUB_WEBHOOK_SECRET cannot be empty."),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -22,7 +32,9 @@ let cachedEnv: Env | null = null;
  * Validates environment variables against the Zod schema.
  * Throws a human-readable error detailing all missing or invalid variables.
  */
-export function validateEnv(rawEnv: Record<string, string | undefined> = process.env): Env {
+export function validateEnv(
+  rawEnv: Record<string, string | undefined> = process.env,
+): Env {
   const result = envSchema.safeParse(rawEnv);
 
   if (!result.success) {

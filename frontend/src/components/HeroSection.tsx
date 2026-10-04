@@ -43,7 +43,8 @@ export default function HeroSection() {
 
         {/* Subhead */}
         <p className="mx-auto mt-6 max-w-2xl text-lg text-zinc-300 sm:text-xl font-normal leading-relaxed">
-          Deconstruct complex systems into precise modules, prerequisite chains, and critical execution paths before writing a single line of code.
+          Deconstruct complex systems into precise modules, prerequisite chains,
+          and critical execution paths before writing a single line of code.
         </p>
 
         {/* Prompt Input Box */}
@@ -82,7 +83,9 @@ export default function HeroSection() {
 
             {/* Prompt presets */}
             <div className="mt-3 flex flex-wrap items-center gap-1.5 px-2 pb-1 text-xs">
-              <span className="text-zinc-500 font-medium mr-1">Try example:</span>
+              <span className="text-zinc-500 font-medium mr-1">
+                Try example:
+              </span>
               {SAMPLE_PROMPTS.map((sample, idx) => (
                 <button
                   key={idx}
@@ -100,20 +103,44 @@ export default function HeroSection() {
         {/* Feature Badges */}
         <div className="mt-12 flex flex-wrap items-center justify-center gap-6 text-xs text-zinc-400">
           <div className="flex items-center gap-2">
-            <svg className="h-4 w-4 text-emerald-400" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+            <svg
+              className="h-4 w-4 text-emerald-400"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path
+                fillRule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z"
+                clipRule="evenodd"
+              />
             </svg>
             <span>Topological Dependency Ordering</span>
           </div>
           <div className="flex items-center gap-2">
-            <svg className="h-4 w-4 text-emerald-400" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+            <svg
+              className="h-4 w-4 text-emerald-400"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path
+                fillRule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z"
+                clipRule="evenodd"
+              />
             </svg>
             <span>Decoupled Serverless Execution</span>
           </div>
           <div className="flex items-center gap-2">
-            <svg className="h-4 w-4 text-emerald-400" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+            <svg
+              className="h-4 w-4 text-emerald-400"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path
+                fillRule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z"
+                clipRule="evenodd"
+              />
             </svg>
             <span>Interactive Visual Canvas</span>
           </div>

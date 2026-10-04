@@ -8,13 +8,19 @@ export default function Footer() {
               Kalp<span className="text-indigo-400">.io</span>
             </span>
             <span className="text-zinc-600">|</span>
-            <span className="text-xs">Turn ideas into dependency-aware build graphs</span>
+            <span className="text-xs">
+              Turn ideas into dependency-aware build graphs
+            </span>
           </div>
 
           <div className="flex flex-wrap items-center gap-6 text-xs">
-            <span className="text-zinc-400 font-mono">Frontend: Next.js App Router (Vercel)</span>
+            <span className="text-zinc-400 font-mono">
+              Frontend: Next.js App Router (Vercel)
+            </span>
             <span className="text-zinc-600">•</span>
-            <span className="text-zinc-400 font-mono">Backend: Decoupled /api (Vercel)</span>
+            <span className="text-zinc-400 font-mono">
+              Backend: Decoupled /api (Vercel)
+            </span>
             <span className="text-zinc-600">•</span>
             <a
               href="https://github.com/GlitteryMite40/Kalp.io"
@@ -28,7 +34,8 @@ export default function Footer() {
         </div>
 
         <div className="mt-8 border-t border-zinc-900/80 pt-6 text-center text-xs text-zinc-600">
-          © {new Date().getFullYear()} Kalp.io. Strictly serverless execution, no local state persistence.
+          © {new Date().getFullYear()} Kalp.io. Strictly serverless execution,
+          no local state persistence.
         </div>
       </div>
     </footer>
