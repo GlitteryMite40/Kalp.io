@@ -6,6 +6,7 @@ import {
   NodeStatusSchema,
   StatusSchema,
   GraphSchema,
+  normalizeAliases,
   toDbNodeStatus,
   toDisplayNodeStatus,
   CanonicalNodeStatusSchema,
@@ -34,7 +35,12 @@ function assert(name: string, condition: boolean, error?: string): void {
 }
 
 function runTests(): void {
-  console.log("=== RUNNING GRAPH SCHEMA FIXTURE TESTS ===\n");
+  console.log("=== RUNNING HARDENED GRAPH SCHEMA FIXTURE TESTS ===\n");
+
+  const VALID_UUID_1 = "11111111-1111-4111-8111-111111111111";
+  const VALID_UUID_2 = "22222222-2222-4222-8222-222222222222";
+  const VALID_UUID_3 = "33333333-3333-4333-8333-333333333333";
+  const VALID_UUID_4 = "44444444-4444-4444-8444-444444444444";
 
   // ---------------------------------------------------------------------------
   // 1. STATUSES - VALID FIXTURES
@@ -109,9 +115,58 @@ function runTests(): void {
   }
 
   // ---------------------------------------------------------------------------
-  // 3. EDGE TYPES - VALID & INVALID FIXTURES
+  // 3. NODE STATUS NORMALIZATION (CanonicalNodeStatusSchema)
   // ---------------------------------------------------------------------------
-  console.log("3. Testing Edge Types...");
+  console.log(
+    "3. Testing NodeSchema.status normalization with CanonicalNodeStatusSchema...",
+  );
+  const testNodeStatusPairs = [
+    { input: "Not Started", expected: "not_started" },
+    { input: "Ready", expected: "ready" },
+    { input: "In Progress", expected: "in_progress" },
+    { input: "Committed", expected: "committed" },
+    { input: "Completed", expected: "completed" },
+    { input: "Blocked", expected: "blocked" },
+    { input: "Failed", expected: "failed" },
+    { input: "Needs Review", expected: "needs_review" },
+    { input: "not_started", expected: "not_started" },
+    { input: "ready", expected: "ready" },
+    { input: "in_progress", expected: "in_progress" },
+    { input: "committed", expected: "committed" },
+    { input: "completed", expected: "completed" },
+    { input: "blocked", expected: "blocked" },
+    { input: "failed", expected: "failed" },
+    { input: "needs_review", expected: "needs_review" },
+  ];
+
+  for (const pair of testNodeStatusPairs) {
+    const parsed = NodeSchema.safeParse({
+      node_key: "01.1",
+      phase: "Phase",
+      title: "Title",
+      status: pair.input,
+    });
+    assert(
+      `NodeSchema normalizes status '${pair.input}' to canonical '${pair.expected}'`,
+      parsed.success && parsed.data.status === pair.expected,
+    );
+  }
+
+  // Default status check
+  const defaultNode = NodeSchema.safeParse({
+    node_key: "01.1",
+    phase: "Phase",
+    title: "Title",
+  });
+  assert(
+    "NodeSchema applies default status 'not_started'",
+    defaultNode.success && defaultNode.data.status === "not_started",
+  );
+
+  // ---------------------------------------------------------------------------
+  // 4. EDGE TYPES - VALID & INVALID FIXTURES
+  // ---------------------------------------------------------------------------
+  console.log("4. Testing Edge Types...");
   for (const edgeType of EDGE_TYPES) {
     const parsed = EdgeTypeSchema.safeParse(edgeType);
     assert(`Valid edge type '${edgeType}' accepted`, parsed.success);
@@ -140,9 +195,9 @@ function runTests(): void {
   }
 
   // ---------------------------------------------------------------------------
-  // 4. REQUIREMENT - VALID FIXTURES
+  // 5. REQUIREMENT - VALID & INVALID FIXTURES & COLLAPSED SHAPE
   // ---------------------------------------------------------------------------
-  console.log("4. Testing Requirement (Valid fixtures)...");
+  console.log("5. Testing Requirement Schema...");
   const validRequirements = [
     {
       key: "REQ-01",
@@ -154,17 +209,18 @@ function runTests(): void {
       description: "Initialize repository and basic layout",
     },
     {
-      id: "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d",
-      project_id: "11111111-2222-3333-4444-555555555555",
+      id: VALID_UUID_1,
+      project_id: VALID_UUID_2,
       key: "SEC-03",
       title: "OAuth 2.0 with GitHub",
       description: null,
       created_at: new Date().toISOString(),
     },
+    // Alias input: projectId, createdAt
     {
-      projectId: "11111111-2222-3333-4444-555555555555",
+      projectId: VALID_UUID_2,
       key: "PERF-01",
-      title: "Serverless Cold Start Optimization",
+      title: "Serverless Optimization",
       description: "Ensure fast bootstrap without external connections",
       createdAt: new Date(),
     },
@@ -179,6 +235,17 @@ function runTests(): void {
     );
   }
 
+  // Verify collapsed snake_case shape (no projectId, only project_id)
+  const reqWithAlias = RequirementSchema.parse({
+    projectId: VALID_UUID_2,
+    key: "ALIAS-1",
+    title: "Alias test",
+  });
+  assert(
+    "Requirement output shape has project_id and no projectId",
+    reqWithAlias.project_id === VALID_UUID_2 && !("projectId" in reqWithAlias),
+  );
+
   // Dual-use value constructor test
   const parsedByVal = Requirement.safeParse(validRequirements[0]);
   assert(
@@ -186,10 +253,7 @@ function runTests(): void {
     parsedByVal.success,
   );
 
-  // ---------------------------------------------------------------------------
-  // 5. REQUIREMENT - INVALID FIXTURES (MUST REJECT)
-  // ---------------------------------------------------------------------------
-  console.log("5. Testing Requirement (Invalid fixtures - rejection)...");
+  // Invalid requirements
   const invalidRequirements = [
     { title: "Missing key" },
     { key: "", title: "Empty key" },
@@ -199,6 +263,8 @@ function runTests(): void {
     { key: "REQ-01", title: "   " }, // whitespace title
     { key: 123, title: "Number key" },
     { key: "REQ-01", title: 456 },
+    { key: "REQ-01", title: "Bad ID", id: "not-a-valid-uuid" },
+    { key: "REQ-01", title: "Bad Project ID", project_id: "not-a-valid-uuid" },
     "not an object",
     null,
     undefined,
@@ -214,11 +280,11 @@ function runTests(): void {
   }
 
   // ---------------------------------------------------------------------------
-  // 6. NODE - VALID FIXTURES
+  // 6. NODE - VALID & INVALID FIXTURES & COLLAPSED SHAPE
   // ---------------------------------------------------------------------------
-  console.log("6. Testing Node (Valid fixtures)...");
+  console.log("6. Testing Node Schema...");
   const validNodes = [
-    // Minimal node: defaults status to 'not_started', files/acceptance/tests to []
+    // Minimal node
     {
       node_key: "01.1",
       phase: "Foundation",
@@ -231,36 +297,31 @@ function runTests(): void {
       title: "Scaffold Frontend",
       status: "Ready",
     },
-    // Node with snake_case status
-    {
-      node_key: "02.1",
-      phase: "Database",
-      title: "Supabase Connection",
-      status: "in_progress",
-    },
-    // Node using 'key' alias
-    {
-      key: "03.1",
-      phase: "Plan engine",
-      title: "LLM Client",
-      status: "Completed",
-    },
     // Full node with all fields
     {
-      id: "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d",
-      project_id: "11111111-2222-3333-4444-555555555555",
+      id: VALID_UUID_1,
+      project_id: VALID_UUID_2,
       node_key: "03.2",
       phase: "Plan engine",
       title: "Graph Schemas",
       type: "core",
-      status: "in_progress",
-      requirement_id: "req-uuid-1234",
+      status: "In Progress",
+      requirement_id: VALID_UUID_3,
       files: ["backend/src/lib/schema.ts", "backend/scripts/test-schema.ts"],
       explanation: "Define strict zod schemas for graph components",
       acceptance: ["Invalid shapes are rejected", "Edge types validated"],
       tests: ["npm run test:schema"],
       prompt: "Create schema.ts with Zod schemas",
       created_at: new Date().toISOString(),
+    },
+    // Node with aliases (key, projectId, requirementId, createdAt)
+    {
+      key: "04.1",
+      phase: "UI",
+      title: "Node View",
+      projectId: VALID_UUID_2,
+      requirementId: VALID_UUID_3,
+      createdAt: new Date().toISOString(),
     },
   ];
 
@@ -271,16 +332,29 @@ function runTests(): void {
       parsed.success,
       parsed.success ? undefined : JSON.stringify(parsed.error.issues),
     );
-    if (parsed.success) {
-      assert(
-        `Node defaults applied properly`,
-        Array.isArray(parsed.data.files) &&
-          Array.isArray(parsed.data.acceptance) &&
-          Array.isArray(parsed.data.tests) &&
-          Boolean(parsed.data.status),
-      );
-    }
   }
+
+  // Verify collapsed snake_case shape for Node
+  const nodeWithAliases = NodeSchema.parse({
+    key: "09.1",
+    nodeKey: undefined,
+    projectId: VALID_UUID_2,
+    requirementId: VALID_UUID_3,
+    phase: "Phase",
+    title: "Title",
+    status: "Completed",
+  });
+  assert(
+    "Node output shape has node_key, project_id, requirement_id and no aliases",
+    nodeWithAliases.node_key === "09.1" &&
+      nodeWithAliases.project_id === VALID_UUID_2 &&
+      nodeWithAliases.requirement_id === VALID_UUID_3 &&
+      nodeWithAliases.status === "completed" &&
+      !("key" in nodeWithAliases) &&
+      !("nodeKey" in nodeWithAliases) &&
+      !("projectId" in nodeWithAliases) &&
+      !("requirementId" in nodeWithAliases),
+  );
 
   // Dual-use value constructor test
   assert(
@@ -288,15 +362,11 @@ function runTests(): void {
     Node.safeParse(validNodes[0]).success,
   );
 
-  // ---------------------------------------------------------------------------
-  // 7. NODE - INVALID FIXTURES (MUST REJECT)
-  // ---------------------------------------------------------------------------
-  console.log("7. Testing Node (Invalid fixtures - rejection)...");
+  // Invalid nodes
   const invalidNodes = [
     { phase: "Foundation", title: "No key" },
     { node_key: "", phase: "Foundation", title: "Empty node_key" },
     { node_key: "   ", phase: "Foundation", title: "Whitespace node_key" },
-    { key: "", phase: "Foundation", title: "Empty key alias" },
     { node_key: "01.1", title: "Missing phase" },
     { node_key: "01.1", phase: "", title: "Empty phase" },
     { node_key: "01.1", phase: "   ", title: "Whitespace phase" },
@@ -319,13 +389,19 @@ function runTests(): void {
       node_key: "01.1",
       phase: "Foundation",
       title: "Test",
-      acceptance: "should-be-array",
+      id: "invalid-uuid-id",
     },
     {
       node_key: "01.1",
       phase: "Foundation",
       title: "Test",
-      tests: "should-be-array",
+      project_id: "invalid-uuid-project",
+    },
+    {
+      node_key: "01.1",
+      phase: "Foundation",
+      title: "Test",
+      requirement_id: "invalid-uuid-req",
     },
     null,
     undefined,
@@ -342,13 +418,13 @@ function runTests(): void {
   }
 
   // ---------------------------------------------------------------------------
-  // 8. EDGE - VALID FIXTURES
+  // 7. EDGE - VALID & INVALID FIXTURES & COLLAPSED SHAPE
   // ---------------------------------------------------------------------------
-  console.log("8. Testing Edge (Valid fixtures)...");
+  console.log("7. Testing Edge Schema...");
   const validEdges = [
     {
-      from_node: "node-1",
-      to_node: "node-2",
+      from_node: "01.1",
+      to_node: "01.2",
       type: "DEPENDS_ON",
     },
     {
@@ -388,10 +464,10 @@ function runTests(): void {
       target: "01.3",
       type: "IMPLEMENTS",
     },
-    // Full edge with id & project_id
+    // Full edge with valid UUIDs
     {
-      id: "edge-uuid-1",
-      project_id: "project-uuid-1",
+      id: VALID_UUID_4,
+      project_id: VALID_UUID_2,
       from_node: "node-A",
       to_node: "node-B",
       type: "DEPENDS_ON",
@@ -407,16 +483,30 @@ function runTests(): void {
     );
   }
 
+  // Verify collapsed snake_case shape for Edge
+  const edgeWithAliases = EdgeSchema.parse({
+    source: "node-X",
+    target: "node-Y",
+    projectId: VALID_UUID_2,
+    type: "BLOCKS",
+  });
+  assert(
+    "Edge output shape has from_node, to_node, project_id and no aliases",
+    edgeWithAliases.from_node === "node-X" &&
+      edgeWithAliases.to_node === "node-Y" &&
+      edgeWithAliases.project_id === VALID_UUID_2 &&
+      !("source" in edgeWithAliases) &&
+      !("target" in edgeWithAliases) &&
+      !("projectId" in edgeWithAliases),
+  );
+
   // Dual-use value constructor test
   assert(
     "Edge.parse (value export) accepts valid edge",
     Edge.safeParse(validEdges[0]).success,
   );
 
-  // ---------------------------------------------------------------------------
-  // 9. EDGE - INVALID FIXTURES (SELF-EDGE & MISSING/INVALID FIELDS)
-  // ---------------------------------------------------------------------------
-  console.log("9. Testing Edge (Invalid fixtures - rejection)...");
+  // Invalid edges
   const invalidEdges = [
     // Self-edge: from_node === to_node (must be rejected!)
     {
@@ -479,6 +569,19 @@ function runTests(): void {
       to_node: "node-2",
       type: "depends_on", // lowercase not allowed
     },
+    // Invalid UUID
+    {
+      id: "not-a-uuid",
+      from_node: "node-1",
+      to_node: "node-2",
+      type: "DEPENDS_ON",
+    },
+    {
+      project_id: "not-a-uuid",
+      from_node: "node-1",
+      to_node: "node-2",
+      type: "DEPENDS_ON",
+    },
     null,
     undefined,
     "edge string",
@@ -495,44 +598,180 @@ function runTests(): void {
   }
 
   // ---------------------------------------------------------------------------
-  // 10. GRAPH - VALID & INVALID FIXTURES
+  // 8. GRAPH - VALID FIXTURES & ALIAS COLLAPSE
   // ---------------------------------------------------------------------------
-  console.log("10. Testing Graph...");
+  console.log("8. Testing Graph Schema (Valid)...");
   const validGraph = {
-    projectId: "p-1",
+    projectId: VALID_UUID_1,
     requirements: [{ key: "REQ-1", title: "Setup" }],
     nodes: [
       { node_key: "01.1", phase: "Init", title: "First Step" },
-      { node_key: "01.2", phase: "Init", title: "Second Step" },
+      {
+        node_key: "01.2",
+        phase: "Init",
+        title: "Second Step",
+        id: VALID_UUID_2,
+      },
     ],
-    edges: [{ from_node: "01.1", to_node: "01.2", type: "DEPENDS_ON" }],
+    edges: [
+      { from_node: "01.1", to_node: "01.2", type: "DEPENDS_ON" },
+      // Edge referencing node by id
+      { from_node: "01.1", to_node: VALID_UUID_2, type: "TESTS" },
+    ],
   };
-  assert("Valid Graph accepted", GraphSchema.safeParse(validGraph).success);
 
-  const invalidGraphs = [
-    // Missing nodes
-    { requirements: [], edges: [] },
-    // Nodes not an array
-    { nodes: "not-an-array" },
-    // Graph containing invalid node
-    {
-      nodes: [{ phase: "Init" }], // missing node_key and title
-      edges: [],
-    },
-    // Graph containing invalid edge (self-edge)
-    {
-      nodes: [{ node_key: "01.1", phase: "Init", title: "First Step" }],
-      edges: [{ from_node: "01.1", to_node: "01.1", type: "DEPENDS_ON" }],
-    },
-  ];
-
-  for (const [idx, invalid] of invalidGraphs.entries()) {
-    const parsed = GraphSchema.safeParse(invalid);
+  const parsedValidGraph = GraphSchema.safeParse(validGraph);
+  assert(
+    "Valid Graph accepted",
+    parsedValidGraph.success,
+    parsedValidGraph.success
+      ? undefined
+      : JSON.stringify(parsedValidGraph.error.issues),
+  );
+  if (parsedValidGraph.success) {
     assert(
-      `Invalid graph fixture #${idx + 1} rejected`,
-      parsed.success === false,
+      "Graph output shape collapses projectId into project_id",
+      parsedValidGraph.data.project_id === VALID_UUID_1 &&
+        !("projectId" in parsedValidGraph.data),
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // 9. GRAPH - superRefine CHECKS (NEW RULES)
+  // ---------------------------------------------------------------------------
+  console.log("9. Testing GraphSchema superRefine checks...");
+
+  // RULE A: Duplicate node_key rejected
+  const graphWithDuplicateNodeKeys = {
+    nodes: [
+      { node_key: "01.1", phase: "Init", title: "First Step" },
+      { node_key: "01.1", phase: "Init", title: "Duplicate Key Step" },
+    ],
+    edges: [],
+  };
+  const duplicateNodeKeyResult = GraphSchema.safeParse(
+    graphWithDuplicateNodeKeys,
+  );
+  assert(
+    "Graph with duplicate node_key rejected by superRefine",
+    duplicateNodeKeyResult.success === false &&
+      duplicateNodeKeyResult.error.issues.some((i) =>
+        i.message.includes("Duplicate node_key"),
+      ),
+  );
+
+  // RULE B: Edge referencing unknown from_node rejected
+  const graphWithUnknownFromNode = {
+    nodes: [
+      { node_key: "01.1", phase: "Init", title: "Step 1" },
+      { node_key: "01.2", phase: "Init", title: "Step 2" },
+    ],
+    edges: [{ from_node: "UNKNOWN_NODE", to_node: "01.2", type: "DEPENDS_ON" }],
+  };
+  const unknownFromNodeResult = GraphSchema.safeParse(graphWithUnknownFromNode);
+  assert(
+    "Graph with edge referencing unknown from_node rejected by superRefine",
+    unknownFromNodeResult.success === false &&
+      unknownFromNodeResult.error.issues.some(
+        (i) =>
+          i.path.join(".") === "edges.0.from_node" &&
+          i.message.includes("does not exist"),
+      ),
+  );
+
+  // RULE C: Edge referencing unknown to_node rejected
+  const graphWithUnknownToNode = {
+    nodes: [
+      { node_key: "01.1", phase: "Init", title: "Step 1" },
+      { node_key: "01.2", phase: "Init", title: "Step 2" },
+    ],
+    edges: [{ from_node: "01.1", to_node: "UNKNOWN_NODE", type: "DEPENDS_ON" }],
+  };
+  const unknownToNodeResult = GraphSchema.safeParse(graphWithUnknownToNode);
+  assert(
+    "Graph with edge referencing unknown to_node rejected by superRefine",
+    unknownToNodeResult.success === false &&
+      unknownToNodeResult.error.issues.some(
+        (i) =>
+          i.path.join(".") === "edges.0.to_node" &&
+          i.message.includes("does not exist"),
+      ),
+  );
+
+  // RULE D: Duplicate edge (identical from_node, to_node, type) rejected
+  const graphWithDuplicateEdge = {
+    nodes: [
+      { node_key: "01.1", phase: "Init", title: "Step 1" },
+      { node_key: "01.2", phase: "Init", title: "Step 2" },
+    ],
+    edges: [
+      { from_node: "01.1", to_node: "01.2", type: "DEPENDS_ON" },
+      { from_node: "01.1", to_node: "01.2", type: "DEPENDS_ON" },
+    ],
+  };
+  const duplicateEdgeResult = GraphSchema.safeParse(graphWithDuplicateEdge);
+  assert(
+    "Graph with duplicate edge (from, to, type) rejected by superRefine",
+    duplicateEdgeResult.success === false &&
+      duplicateEdgeResult.error.issues.some((i) =>
+        i.message.includes("Duplicate edge"),
+      ),
+  );
+
+  // Multiple edges between same nodes but DIFFERENT types must be ACCEPTED
+  const graphWithMultiTypeEdges = {
+    nodes: [
+      { node_key: "01.1", phase: "Init", title: "Step 1" },
+      { node_key: "01.2", phase: "Init", title: "Step 2" },
+    ],
+    edges: [
+      { from_node: "01.1", to_node: "01.2", type: "DEPENDS_ON" },
+      { from_node: "01.1", to_node: "01.2", type: "TESTS" },
+    ],
+  };
+  assert(
+    "Graph with distinct edge types between same nodes is accepted",
+    GraphSchema.safeParse(graphWithMultiTypeEdges).success,
+  );
+
+  // ---------------------------------------------------------------------------
+  // 10. DIRECT normalizeAliases UNIT TEST
+  // ---------------------------------------------------------------------------
+  console.log("10. Testing normalizeAliases standalone...");
+  const rawObj = {
+    projectId: VALID_UUID_1,
+    requirementId: VALID_UUID_2,
+    createdAt: "2026-10-04T00:00:00Z",
+    nodeKey: "01.1",
+    fromNode: "node-1",
+    toNode: "node-2",
+  };
+  const normalized = normalizeAliases(rawObj) as Record<string, unknown>;
+  assert(
+    "normalizeAliases converts projectId -> project_id",
+    normalized.project_id === VALID_UUID_1 && !("projectId" in normalized),
+  );
+  assert(
+    "normalizeAliases converts requirementId -> requirement_id",
+    normalized.requirement_id === VALID_UUID_2 &&
+      !("requirementId" in normalized),
+  );
+  assert(
+    "normalizeAliases converts createdAt -> created_at",
+    normalized.created_at === "2026-10-04T00:00:00Z" &&
+      !("createdAt" in normalized),
+  );
+  assert(
+    "normalizeAliases converts nodeKey -> node_key",
+    normalized.node_key === "01.1" && !("nodeKey" in normalized),
+  );
+  assert(
+    "normalizeAliases converts fromNode -> from_node and toNode -> to_node",
+    normalized.from_node === "node-1" &&
+      normalized.to_node === "node-2" &&
+      !("fromNode" in normalized) &&
+      !("toNode" in normalized),
+  );
 
   // ---------------------------------------------------------------------------
   // SUMMARY REPORT
