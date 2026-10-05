@@ -1326,6 +1326,89 @@ function runTests(): void {
     resUnordered.success === true,
   );
 
+  // B5: requirementKeyOptionalForTypes
+  const optionalTypesIssues: Array<{
+    message: string;
+    path?: (string | number)[];
+  }> = [];
+  const optionalTypesCtx = {
+    addIssue: (issue: { message: string; path?: (string | number)[] }) => {
+      optionalTypesIssues.push(issue);
+    },
+  };
+
+  checkGraphIntegrity(
+    {
+      requirements: [{ key: "REQ-1" }],
+      nodes: [
+        { node_key: "01.1", type: "setup", requirement_key: null },
+        { node_key: "02.1", type: "testing", requirement_key: undefined },
+        { node_key: "03.1", type: "deployment", requirement_key: "" },
+        { node_key: "04.1", type: "backend", requirement_key: "REQ-1" },
+      ],
+      edges: [],
+    },
+    optionalTypesCtx as never,
+    {
+      requireRequirementKey: true,
+      requirementKeyOptionalForTypes: ["setup", "testing", "deployment"],
+    },
+  );
+  assert(
+    "requirementKeyOptionalForTypes allows setup/testing/deployment nodes without requirement_key",
+    optionalTypesIssues.length === 0,
+  );
+
+  // Rejects backend/frontend nodes missing requirement_key
+  optionalTypesIssues.length = 0;
+  checkGraphIntegrity(
+    {
+      requirements: [{ key: "REQ-1" }],
+      nodes: [
+        { node_key: "01.1", type: "setup", requirement_key: null },
+        { node_key: "02.1", type: "backend", requirement_key: null },
+        { node_key: "03.1", type: "frontend", requirement_key: undefined },
+      ],
+      edges: [],
+    },
+    optionalTypesCtx as never,
+    {
+      requireRequirementKey: true,
+      requirementKeyOptionalForTypes: ["setup", "testing", "deployment"],
+    },
+  );
+  assert(
+    "requirementKeyOptionalForTypes still flags backend/frontend missing requirement_key",
+    optionalTypesIssues.some((m) =>
+      m.message.includes("Node 02.1 is missing required requirement_key"),
+    ) &&
+      optionalTypesIssues.some((m) =>
+        m.message.includes("Node 03.1 is missing required requirement_key"),
+      ),
+  );
+
+  // Case-insensitivity check
+  optionalTypesIssues.length = 0;
+  checkGraphIntegrity(
+    {
+      requirements: [{ key: "REQ-1" }],
+      nodes: [
+        { node_key: "01.1", type: "SETUP", requirement_key: null },
+        { node_key: "02.1", type: "Testing", requirement_key: null },
+      ],
+      edges: [],
+    },
+    optionalTypesCtx as never,
+    {
+      requireRequirementKey: true,
+      requirementKeyOptionalForTypes: ["setup", "testing"],
+    },
+  );
+  assert(
+    "requirementKeyOptionalForTypes matches case-insensitively",
+    optionalTypesIssues.length === 0,
+  );
+
   // ---------------------------------------------------------------------------
   // SUMMARY REPORT
   // ---------------------------------------------------------------------------

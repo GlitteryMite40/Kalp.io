@@ -1,5 +1,5 @@
 /**
- * Real-model smoke test for prompt templates and graph schemas.
+ * Real-model smoke test for prompt templates and graph schemas (v2).
  *
  * NOTE:
  * - This script spends about four Gemini API calls on the active tier.
@@ -21,20 +21,53 @@ import {
   type DecomposeOutput,
   buildCriteriaMessages,
   makeCriteriaSchema,
-  stageMeta,
+  type CriteriaOutput,
+  FOUNDATION_NODE_TYPES,
+  MAX_NODES_PER_CRITERIA_CALL,
+  chunkNodes,
+  type CriteriaInputNode,
 } from "../src/server/prompts/index";
 
 const SAMPLE_IDEA =
-  "A lightweight command-line tool named 'dockclean' that discovers and removes " +
-  "dangling Docker containers, unused images, and orphan volumes, with interactive " +
-  "confirmation prompts and JSON export.";
+  "A habit tracker for college students with streaks and reminders.";
+
+async function generateWithRetry<T>(
+  prompt: string,
+  opts?: Parameters<typeof generateJson<T>>[1],
+  maxRetries = 3,
+): Promise<{ data: T; model: string }> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await generateJson<T>(prompt, opts);
+    } catch (err) {
+      lastErr = err;
+      const msg = (err as Error).message || "";
+      const isTransient =
+        msg.includes("503") ||
+        msg.includes("500") ||
+        msg.includes("502") ||
+        msg.includes("429") ||
+        msg.includes("RESOURCE_EXHAUSTED") ||
+        msg.includes("UNAVAILABLE") ||
+        msg.includes("fetch failed");
+
+      if (isTransient && attempt < maxRetries) {
+        const delay = Math.pow(2, attempt) * 2000;
+        console.warn(
+          `  [Retry ${attempt + 1}/${maxRetries}] Transient error: ${msg}. Retrying in ${delay}ms...`,
+        );
+        await new Promise((res) => setTimeout(res, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
+}
 
 async function runPromptSmoke() {
-  console.log("=== RUNNING PROMPT TEMPLATES REAL-MODEL SMOKE TEST ===\n");
-  console.log("Input Idea:", SAMPLE_IDEA);
-  console.log("");
-
-  let hasFailed = false;
+  console.log("=== RUNNING PROMPT TEMPLATES REAL-MODEL SMOKE TEST (v2) ===\n");
 
   // ---------------------------------------------------------------------------
   // Stage 1: Extract
@@ -42,56 +75,51 @@ async function runPromptSmoke() {
   let extractResult: { data: ExtractOutput; model: string } | null = null;
   try {
     const extractMsgs = buildExtractMessages(SAMPLE_IDEA);
-    extractResult = await generateJson(extractMsgs.prompt, {
+    extractResult = await generateWithRetry(extractMsgs.prompt, {
       system: extractMsgs.system,
       schema: ExtractOutputSchema,
       maxOutputTokens: 2048,
     });
-    const meta = stageMeta("extract", extractResult.model);
-    console.log("STAGE 1 [Extract]: PASS");
-    console.log(`  Model:        ${meta.model}`);
-    console.log(`  Prompt Ver:   ${meta.prompt_version}`);
-    console.log(
-      `  Requirements: ${extractResult.data.requirements?.length ?? 0}`,
-    );
-    console.log(
-      `  Constraints:  ${extractResult.data.constraints?.length ?? 0}`,
-    );
   } catch (err) {
-    hasFailed = true;
     console.error("STAGE 1 [Extract]: FAIL");
     console.error("  Error:", (err as Error).message);
     process.exit(1);
   }
 
+  const projectName = extractResult.data.project_name;
   const reqKeys = extractResult.data.requirements.map(
     (r: { key: string }) => r.key,
   );
+  const requirementCount = extractResult.data.requirements.length;
+
+  console.log("STAGE 1 [Extract]: PASS");
+  console.log(`  project_name:      ${projectName}`);
+  console.log(`  requirement count: ${requirementCount}`);
 
   // ---------------------------------------------------------------------------
   // Stage 2: Architecture
   // ---------------------------------------------------------------------------
   let archResult: { data: ArchitectureOutput; model: string } | null = null;
   try {
-    const archMsgs = buildArchitectureMessages(extractResult.data.requirements);
+    const archMsgs = buildArchitectureMessages({
+      requirements: extractResult.data.requirements,
+      assumptions: extractResult.data.assumptions,
+    });
     const archSchema = makeArchitectureOutputSchema(reqKeys);
-    archResult = await generateJson(archMsgs.prompt, {
+    archResult = await generateWithRetry(archMsgs.prompt, {
       system: archMsgs.system,
       schema: archSchema,
       maxOutputTokens: 2048,
     });
-    const meta = stageMeta("architecture", archResult.model);
-    console.log("\nSTAGE 2 [Architecture]: PASS");
-    console.log(`  Model:        ${meta.model}`);
-    console.log(`  Prompt Ver:   ${meta.prompt_version}`);
-    console.log(`  Modules:      ${archResult.data.modules?.length ?? 0}`);
-    console.log(`  Interactions: ${archResult.data.interactions?.length ?? 0}`);
   } catch (err) {
-    hasFailed = true;
     console.error("\nSTAGE 2 [Architecture]: FAIL");
     console.error("  Error:", (err as Error).message);
     process.exit(1);
   }
+
+  const moduleCount = archResult.data.modules.length;
+  console.log("\nSTAGE 2 [Architecture]: PASS");
+  console.log(`  module count:      ${moduleCount}`);
 
   // ---------------------------------------------------------------------------
   // Stage 3: Decompose
@@ -103,58 +131,100 @@ async function runPromptSmoke() {
       architecture: archResult.data,
     });
     const decompSchema = makeDecomposeOutputSchema(reqKeys);
-    decompResult = await generateJson(decompMsgs.prompt, {
+    decompResult = await generateWithRetry(decompMsgs.prompt, {
       system: decompMsgs.system,
       schema: decompSchema,
-      maxOutputTokens: 4096,
+      maxOutputTokens: 16384,
     });
-    const meta = stageMeta("decompose", decompResult.model);
-    console.log("\nSTAGE 3 [Decompose]: PASS");
-    console.log(`  Model:        ${meta.model}`);
-    console.log(`  Prompt Ver:   ${meta.prompt_version}`);
-    console.log(`  Nodes:        ${decompResult.data.nodes?.length ?? 0}`);
-    console.log(`  Edges:        ${decompResult.data.edges?.length ?? 0}`);
   } catch (err) {
-    hasFailed = true;
     console.error("\nSTAGE 3 [Decompose]: FAIL");
     console.error("  Error:", (err as Error).message);
     process.exit(1);
   }
 
-  const nodeKeys = decompResult.data.nodes.map(
-    (n: { node_key: string }) => n.node_key,
-  );
+  const nodeCount = decompResult.data.nodes.length;
+  const edgeCount = decompResult.data.edges.length;
+
+  const foundationNodeCount = decompResult.data.nodes.filter((n) =>
+    (FOUNDATION_NODE_TYPES as readonly string[]).includes(
+      (n.type ?? "").toLowerCase().trim(),
+    ),
+  ).length;
+  const nonFoundationNodeCount = nodeCount - foundationNodeCount;
+
+  console.log("\nSTAGE 3 [Decompose]: PASS");
+  console.log(`  node count:        ${nodeCount}`);
+  console.log(`  edge count:        ${edgeCount}`);
+  console.log(`  foundation nodes:  ${foundationNodeCount}`);
+  console.log(`  non-foundation:    ${nonFoundationNodeCount}`);
+
+  if (nodeCount < 12 || nodeCount > 40) {
+    console.warn(
+      `  [Warning] Node count ${nodeCount} is outside recommended 12-40 range.`,
+    );
+  }
 
   // ---------------------------------------------------------------------------
-  // Stage 4: Criteria
+  // Stage 4: Criteria (First batch up to 8 nodes)
   // ---------------------------------------------------------------------------
+  let critResult: { data: CriteriaOutput; model: string } | null = null;
+  let batchNodeKeys: string[] = [];
   try {
-    const critMsgs = buildCriteriaMessages(decompResult.data.nodes);
-    const critSchema = makeCriteriaSchema(nodeKeys);
-    const critResult = await generateJson(critMsgs.prompt, {
+    const nodeMap = new Map(
+      decompResult.data.nodes.map((n) => [n.node_key, n]),
+    );
+    const reqMap = new Map(
+      extractResult.data.requirements.map((r) => [r.key, r]),
+    );
+
+    const enrichedNodes: CriteriaInputNode[] = decompResult.data.nodes.map(
+      (node) => {
+        const prereqKeys = decompResult.data.edges
+          .filter(
+            (e) => e.from_node === node.node_key && e.type === "DEPENDS_ON",
+          )
+          .map((e) => e.to_node);
+        const depends_on = prereqKeys
+          .map((k) => nodeMap.get(k)?.title)
+          .filter((t): t is string => Boolean(t));
+        const reqTitle = node.requirement_key
+          ? reqMap.get(node.requirement_key)?.title
+          : undefined;
+
+        return {
+          node_key: node.node_key,
+          title: node.title,
+          explanation: node.explanation,
+          files: node.files,
+          requirement_key: node.requirement_key,
+          requirement_title: reqTitle,
+          depends_on: depends_on.length > 0 ? depends_on : undefined,
+        };
+      },
+    );
+
+    const batches = chunkNodes(enrichedNodes, MAX_NODES_PER_CRITERIA_CALL);
+    const firstBatch = batches[0];
+    batchNodeKeys = firstBatch.map((n) => n.node_key);
+
+    const critMsgs = buildCriteriaMessages(firstBatch);
+    const critSchema = makeCriteriaSchema(batchNodeKeys);
+    critResult = await generateWithRetry(critMsgs.prompt, {
       system: critMsgs.system,
       schema: critSchema,
       maxOutputTokens: 4096,
     });
-    const meta = stageMeta("criteria", critResult.model);
-    const criteriaCount = Object.keys(critResult.data || {}).length;
-    console.log("\nSTAGE 4 [Criteria]: PASS");
-    console.log(`  Model:        ${meta.model}`);
-    console.log(`  Prompt Ver:   ${meta.prompt_version}`);
-    console.log(`  Nodes Keyed:  ${criteriaCount}`);
   } catch (err) {
-    hasFailed = true;
     console.error("\nSTAGE 4 [Criteria]: FAIL");
     console.error("  Error:", (err as Error).message);
     process.exit(1);
   }
 
-  if (hasFailed) {
-    console.error("\nONE OR MORE STAGES FAILED.");
-    process.exit(1);
-  } else {
-    console.log("\nALL 4 PIPELINE STAGES PASSED REAL-MODEL VALIDATION.");
-  }
+  const criteriaKeys = Object.keys(critResult.data || {});
+  console.log("\nSTAGE 4 [Criteria]: PASS");
+  console.log(`  criteria keys returned: [${criteriaKeys.join(", ")}]`);
+
+  console.log("\nALL 4 PIPELINE STAGES PASSED REAL-MODEL VALIDATION.");
 }
 
 runPromptSmoke();

@@ -1,19 +1,57 @@
 import { z } from "zod";
 import {
   BASE_SYSTEM_GUARD,
+  PromptInputError,
   wrapUserInput,
   type PromptMessages,
 } from "./shared";
 
-export const CRITERIA_PROMPT_VERSION = "criteria.v1";
+export const CRITERIA_PROMPT_VERSION = "criteria.v2";
+
+export const MAX_NODES_PER_CRITERIA_CALL = 8;
+
+/**
+ * Splits an array of nodes into chunks suitable for criteria generation.
+ */
+export function chunkNodes<T>(
+  nodes: T[],
+  size = MAX_NODES_PER_CRITERIA_CALL,
+): T[][] {
+  if (!nodes || nodes.length === 0) return [];
+  const chunks: T[][] = [];
+  for (let i = 0; i < nodes.length; i += size) {
+    chunks.push(nodes.slice(i, i + size));
+  }
+  return chunks;
+}
+
+/**
+ * Merges multiple CriteriaOutput dictionary batches into a single CriteriaOutput object.
+ * Throws an Error if a duplicate node_key is detected across batches.
+ */
+export function mergeCriteria(parts: CriteriaOutput[]): CriteriaOutput {
+  const merged: CriteriaOutput = {};
+  for (const part of parts) {
+    if (!part) continue;
+    for (const [key, val] of Object.entries(part)) {
+      if (key in merged) {
+        throw new Error(
+          `Duplicate node_key "${key}" found across criteria batches`,
+        );
+      }
+      merged[key] = val;
+    }
+  }
+  return merged;
+}
 
 export const StrictNodeCriteriaSchema = z.object({
   acceptance: z
     .array(z.string().trim().min(1, "Acceptance criterion cannot be empty"))
-    .min(1, "At least one acceptance criterion is required"),
+    .min(2, "At least two acceptance criteria are required"),
   tests: z
     .array(z.string().trim().min(1, "Test specification cannot be empty"))
-    .min(1, "At least one test specification is required"),
+    .min(3, "At least three test specifications are required"),
 });
 
 export const NodeCriteriaSchema = StrictNodeCriteriaSchema;
@@ -110,6 +148,9 @@ export type CriteriaInputNode = {
   title: string;
   description?: string | null;
   explanation?: string | null;
+  requirement_key?: string | null;
+  requirement_title?: string | null;
+  depends_on?: string[];
   files?: string[];
 };
 
@@ -124,19 +165,37 @@ export type CriteriaInput =
  */
 export function buildCriteriaMessages(input: CriteriaInput): PromptMessages {
   const nodeList = Array.isArray(input) ? input : input.nodes;
+
+  if (nodeList.length > MAX_NODES_PER_CRITERIA_CALL) {
+    throw new PromptInputError(
+      `Cannot process more than ${MAX_NODES_PER_CRITERIA_CALL} nodes per criteria call (got ${nodeList.length}). Callers must batch nodes.`,
+      "TOO_MANY_NODES",
+    );
+  }
+
   const serializedNodes = nodeList.map((n) => ({
     node_key: n.node_key,
     title: n.title,
     description: n.description ?? n.explanation ?? null,
+    ...(n.requirement_key !== undefined
+      ? { requirement_key: n.requirement_key }
+      : {}),
+    ...(n.requirement_title !== undefined
+      ? { requirement_title: n.requirement_title }
+      : {}),
+    ...(n.depends_on !== undefined ? { depends_on: n.depends_on } : {}),
     files: n.files ?? [],
   }));
 
   const prompt = `For each node provided in the delimited block below, define:
-1. acceptance: Array of concrete, verifiable acceptance criteria strings.
-2. tests: Array of specific test cases, commands, or assertions.
+1. acceptance: Array of at least 2 concrete, verifiable acceptance criteria strings.
+2. tests: Array of at least 3 specific test cases, commands, or assertions.
 
 Rules:
 - Output must be a JSON dictionary keyed by node_key (e.g. "01.1").
+- Acceptance items are observable outcomes (no vague wording such as "works well").
+- Tests are runnable checks and cover the happy path, an error or edge case, and a command or regression check.
+- One sentence per item.
 - Do not create new nodes.
 - Use keys only, not database identifiers.
 
@@ -144,10 +203,13 @@ Required JSON output format:
 {
   "<node_key>": {
     "acceptance": [
-      "string criterion"
+      "Observable outcome criterion 1",
+      "Observable outcome criterion 2"
     ],
     "tests": [
-      "string test specification"
+      "Happy path runnable test check",
+      "Edge case or error handling check",
+      "Command execution or regression check"
     ]
   }
 }

@@ -4,6 +4,11 @@ import { GraphSchema } from "../src/lib/schema";
 import {
   DEPENDS_ON_DIRECTION_TEXT,
   escapeDelimiterTags,
+  MAX_INPUT_CHARS,
+  MIN_INPUT_CHARS,
+  PromptInputError,
+  assertIdeaLength,
+  BASE_SYSTEM_GUARD,
 } from "../src/server/prompts/shared";
 import {
   buildExtractMessages,
@@ -21,6 +26,8 @@ import {
   DECOMPOSE_PROMPT_VERSION,
   DecomposeOutputSchema,
   makeDecomposeOutputSchema,
+  NODE_TYPES,
+  FOUNDATION_NODE_TYPES,
 } from "../src/server/prompts/decompose";
 import {
   buildCriteriaMessages,
@@ -28,6 +35,10 @@ import {
   CriteriaOutputSchema,
   makeCriteriaSchema,
   unwrapCriteria,
+  MAX_NODES_PER_CRITERIA_CALL,
+  chunkNodes,
+  mergeCriteria,
+  StrictNodeCriteriaSchema,
 } from "../src/server/prompts/criteria";
 import { PROMPT_VERSIONS, stageMeta } from "../src/server/prompts/index";
 
@@ -83,7 +94,7 @@ async function runPromptTests() {
       },
     ];
 
-    buildExtractMessages("Create an e-commerce platform");
+    buildExtractMessages("Create an e-commerce platform for vintage clothing");
     buildArchitectureMessages(dummyReqs);
     buildDecomposeMessages({
       requirements: dummyReqs,
@@ -105,7 +116,7 @@ async function runPromptTests() {
   // ---------------------------------------------------------------------------
   // Check 2: Version constants exist, non-empty, and match builder outputs
   // ---------------------------------------------------------------------------
-  const extractMsg = buildExtractMessages("Test idea");
+  const extractMsg = buildExtractMessages("Test idea for web application");
   const archMsg = buildArchitectureMessages([
     { key: "REQ-1", title: "Test", description: "Desc" },
   ]);
@@ -118,17 +129,13 @@ async function runPromptTests() {
   ]);
 
   const versionsValid =
-    typeof EXTRACT_PROMPT_VERSION === "string" &&
-    EXTRACT_PROMPT_VERSION.length > 0 &&
+    EXTRACT_PROMPT_VERSION === "extract.v2" &&
     extractMsg.version === EXTRACT_PROMPT_VERSION &&
-    typeof ARCHITECTURE_PROMPT_VERSION === "string" &&
-    ARCHITECTURE_PROMPT_VERSION.length > 0 &&
+    ARCHITECTURE_PROMPT_VERSION === "architecture.v2" &&
     archMsg.version === ARCHITECTURE_PROMPT_VERSION &&
-    typeof DECOMPOSE_PROMPT_VERSION === "string" &&
-    DECOMPOSE_PROMPT_VERSION.length > 0 &&
+    DECOMPOSE_PROMPT_VERSION === "decompose.v2" &&
     decompMsg.version === DECOMPOSE_PROMPT_VERSION &&
-    typeof CRITERIA_PROMPT_VERSION === "string" &&
-    CRITERIA_PROMPT_VERSION.length > 0 &&
+    CRITERIA_PROMPT_VERSION === "criteria.v2" &&
     critMsg.version === CRITERIA_PROMPT_VERSION;
 
   if (versionsValid) {
@@ -136,7 +143,12 @@ async function runPromptTests() {
       "Check 2: Version constants exist, are non-empty, and match builder outputs",
     );
   } else {
-    fail("Check 2: Version constants mismatch or invalid");
+    fail("Check 2: Version constants mismatch or invalid", {
+      extract: extractMsg.version,
+      arch: archMsg.version,
+      decomp: decompMsg.version,
+      crit: critMsg.version,
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -373,6 +385,8 @@ async function runPromptTests() {
 
   // ExtractOutputSchema
   const validExtract = {
+    project_name: "Kalp Project",
+    assumptions: ["Simple MVP assumption"],
     requirements: [
       { key: "REQ-1", title: "Auth", description: "OAuth login" },
       { key: "REQ-2", title: "Dashboard", description: "Metrics view" },
@@ -382,6 +396,7 @@ async function runPromptTests() {
     integrations: ["GitHub"],
   };
   const invalidExtractDuplicateKey = {
+    project_name: "Kalp Project",
     requirements: [
       { key: "REQ-1", title: "Auth" },
       { key: "REQ-1", title: "Duplicate Auth" },
@@ -399,6 +414,7 @@ async function runPromptTests() {
 
   // C5: ExtractOutputSchema rejects invalid requirement key format
   const invalidExtractBadKeyFormat = {
+    project_name: "Kalp Project",
     requirements: [
       { key: "REQ-AUTH", title: "Auth" },
       { key: "req-1", title: "Lower" },
@@ -413,6 +429,14 @@ async function runPromptTests() {
 
   // ArchitectureOutputSchema & makeArchitectureOutputSchema
   const validArch = {
+    stack: {
+      frontend: "Next.js (React)",
+      backend: "Next.js API Routes",
+      database: "Supabase Postgres",
+      hosting: "Vercel",
+      other: [],
+    },
+    assumptions: ["Vercel serverless runtime"],
     modules: [
       {
         name: "AuthService",
@@ -423,6 +447,14 @@ async function runPromptTests() {
     interactions: ["AuthService queries database"],
   };
   const validArchBoth = {
+    stack: {
+      frontend: "Next.js (React)",
+      backend: "Next.js API Routes",
+      database: "Supabase Postgres",
+      hosting: "Vercel",
+      other: [],
+    },
+    assumptions: ["Vercel serverless runtime"],
     modules: [
       {
         name: "AuthService",
@@ -438,6 +470,13 @@ async function runPromptTests() {
     interactions: ["AuthService queries database"],
   };
   const invalidArch = {
+    stack: {
+      frontend: "Next.js (React)",
+      backend: "Next.js API Routes",
+      database: "Supabase Postgres",
+      hosting: "Vercel",
+      other: [],
+    },
     modules: [],
   };
 
@@ -453,6 +492,13 @@ async function runPromptTests() {
   // (d) makeArchitectureOutputSchema rejects an unknown requirement key
   const archSchemaWithReqs = makeArchitectureOutputSchema(["REQ-1", "REQ-2"]);
   const invalidArchUnknownReqKey = {
+    stack: {
+      frontend: "Next.js (React)",
+      backend: "Next.js API Routes",
+      database: "Supabase Postgres",
+      hosting: "Vercel",
+      other: [],
+    },
     modules: [
       {
         name: "AuthService",
@@ -501,6 +547,7 @@ async function runPromptTests() {
         node_key: "01.1",
         phase: "01",
         title: "Database schema",
+        type: "database",
         requirement_key: "REQ-1",
         status: "not_started",
         files: ["db.ts"],
@@ -510,6 +557,7 @@ async function runPromptTests() {
         node_key: "01.2",
         phase: "01",
         title: "API route",
+        type: "backend",
         requirement_key: "REQ-1",
         status: "not_started",
         files: ["route.ts"],
@@ -531,6 +579,7 @@ async function runPromptTests() {
         node_key: "01.1",
         phase: "01",
         title: "Database schema",
+        type: "database",
         requirement_key: "REQ-1",
       },
     ],
@@ -543,14 +592,15 @@ async function runPromptTests() {
     ],
   };
 
-  // (a) decompose output with a node missing requirement_key is rejected
+  // (a) decompose output with a non-foundation node missing requirement_key is rejected
   const invalidDecomposeMissingReqKey = {
     nodes: [
       {
         node_key: "01.1",
         phase: "01",
         title: "Database schema",
-        // missing requirement_key
+        type: "backend",
+        // missing requirement_key on non-foundation node
       },
     ],
     edges: [],
@@ -576,6 +626,7 @@ async function runPromptTests() {
         node_key: "-01.1",
         phase: "01",
         title: "Database schema",
+        type: "database",
         requirement_key: "REQ-1",
       },
     ],
@@ -587,6 +638,7 @@ async function runPromptTests() {
         node_key: "01.1",
         phase: "   ",
         title: "Database schema",
+        type: "database",
         requirement_key: "REQ-1",
       },
     ],
@@ -609,6 +661,7 @@ async function runPromptTests() {
         node_key: "01.1",
         phase: "01",
         title: "Task 1",
+        type: "database",
         requirement_key: "REQ-UNKNOWN",
       },
     ],
@@ -620,12 +673,14 @@ async function runPromptTests() {
         node_key: "01.1",
         phase: "01",
         title: "Task 1",
+        type: "database",
         requirement_key: "REQ-1",
       },
       {
         node_key: "01.2",
         phase: "01",
         title: "Task 2",
+        type: "backend",
         requirement_key: "REQ-1",
       },
     ],
@@ -683,7 +738,7 @@ async function runPromptTests() {
   const validCriteria = {
     "01.1": {
       acceptance: ["Tables created", "Pool connected"],
-      tests: ["npm test:db"],
+      tests: ["npm test:db", "npm test:error", "npm test:regression"],
     },
   };
   const invalidCriteria = {
@@ -710,20 +765,44 @@ async function runPromptTests() {
   const criteriaSchemaWithNodes = makeCriteriaSchema(["01.1", "01.2"]);
   const critEmpty = {};
   const critMissingNode = {
-    "01.1": { acceptance: ["Done"], tests: ["npm test"] },
+    "01.1": {
+      acceptance: ["Done 1", "Done 2"],
+      tests: ["npm test 1", "npm test 2", "npm test 3"],
+    },
   };
   const critExtraNode = {
-    "01.1": { acceptance: ["Done 1"], tests: ["npm test 1"] },
-    "01.2": { acceptance: ["Done 2"], tests: ["npm test 2"] },
-    "01.3": { acceptance: ["Done 3"], tests: ["npm test 3"] },
+    "01.1": {
+      acceptance: ["Done 1", "Done 2"],
+      tests: ["npm test 1", "npm test 2", "npm test 3"],
+    },
+    "01.2": {
+      acceptance: ["Done 3", "Done 4"],
+      tests: ["npm test 4", "npm test 5", "npm test 6"],
+    },
+    "01.3": {
+      acceptance: ["Done 5", "Done 6"],
+      tests: ["npm test 7", "npm test 8", "npm test 9"],
+    },
   };
   const critEmptyAcceptance = {
-    "01.1": { acceptance: [], tests: ["npm test 1"] },
-    "01.2": { acceptance: ["Done 2"], tests: ["npm test 2"] },
+    "01.1": {
+      acceptance: [],
+      tests: ["npm test 1", "npm test 2", "npm test 3"],
+    },
+    "01.2": {
+      acceptance: ["Done 2a", "Done 2b"],
+      tests: ["npm test 4", "npm test 5", "npm test 6"],
+    },
   };
   const critValid = {
-    "01.1": { acceptance: ["Done 1"], tests: ["npm test 1"] },
-    "01.2": { acceptance: ["Done 2"], tests: ["npm test 2"] },
+    "01.1": {
+      acceptance: ["Done 1a", "Done 1b"],
+      tests: ["npm test 1", "npm test 2", "npm test 3"],
+    },
+    "01.2": {
+      acceptance: ["Done 2a", "Done 2b"],
+      tests: ["npm test 4", "npm test 5", "npm test 6"],
+    },
   };
 
   if (criteriaSchemaWithNodes.safeParse(critEmpty).success) {
@@ -807,7 +886,9 @@ async function runPromptTests() {
     }
 
     // Confirm that when passed to builder, the prompt has exactly 1 closing tag
-    const built = buildExtractMessages(`Idea with ${variant}`);
+    const built = buildExtractMessages(
+      `Valid project idea description with ${variant}`,
+    );
     const closeCount = (built.prompt.match(/<\/user_input>/gi) || []).length;
     if (closeCount !== 1) {
       fail(
@@ -887,7 +968,10 @@ async function runPromptTests() {
   // (a) Single-key wrapper unwraps when "criteria" is not an expected node key
   const wrappedCrit = {
     criteria: {
-      "01.1": { acceptance: ["Accepted"], tests: ["Tested"] },
+      "01.1": {
+        acceptance: ["Accepted 1", "Accepted 2"],
+        tests: ["Tested 1", "Tested 2", "Tested 3"],
+      },
     },
   };
   const unwrapped1 = unwrapCriteria(wrappedCrit, ["01.1"]);
@@ -896,6 +980,7 @@ async function runPromptTests() {
   if (!parseWrappedRes.success) {
     fail(
       "Check 9: makeCriteriaSchema failed to unwrap { criteria: { '01.1': ... } }",
+      parseWrappedRes.error,
     );
   } else if (!("01.1" in (unwrapped1 as Record<string, unknown>))) {
     fail("Check 9: unwrapCriteria did not unwrap single-key criteria object");
@@ -904,8 +989,12 @@ async function runPromptTests() {
   // (b) Node actually keyed "criteria" is NOT unwrapped
   const nodeKeyedCriteria = {
     criteria: {
-      acceptance: ["Accept node criteria"],
-      tests: ["Test node criteria"],
+      acceptance: ["Accept node criteria 1", "Accept node criteria 2"],
+      tests: [
+        "Test node criteria 1",
+        "Test node criteria 2",
+        "Test node criteria 3",
+      ],
     },
   };
   const unwrappedCriteriaNode = unwrapCriteria(nodeKeyedCriteria, ["criteria"]);
@@ -958,6 +1047,432 @@ async function runPromptTests() {
       meta3,
       meta4,
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check 11: Extract schema requires project_name and defaults assumptions
+  // ---------------------------------------------------------------------------
+  const extractWithoutName = {
+    requirements: [{ key: "REQ-1", title: "Auth", description: "Desc" }],
+  };
+  const extractWithNameNoAssumptions = {
+    project_name: "Kalp Project",
+    requirements: [{ key: "REQ-1", title: "Auth", description: "Desc" }],
+  };
+  const parseNoName = ExtractOutputSchema.safeParse(extractWithoutName);
+  const parseWithName = ExtractOutputSchema.safeParse(
+    extractWithNameNoAssumptions,
+  );
+
+  if (
+    !parseNoName.success &&
+    parseWithName.success &&
+    Array.isArray(parseWithName.data.assumptions) &&
+    parseWithName.data.assumptions.length === 0
+  ) {
+    pass(
+      "Check 11: extract schema requires project_name and defaults assumptions",
+    );
+  } else {
+    fail(
+      "Check 11: extract schema project_name or assumptions default failed",
+      {
+        parseNoNameSuccess: parseNoName.success,
+        parseWithNameSuccess: parseWithName.success,
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check 12: assertIdeaLength rejects empty, too-short, and over-20000 input
+  // ---------------------------------------------------------------------------
+  let assertLengthPassed = true;
+  try {
+    assertIdeaLength("");
+    fail("Check 12: assertIdeaLength failed to reject empty string");
+    assertLengthPassed = false;
+  } catch (e) {
+    if (!(e instanceof PromptInputError) || e.code !== "INPUT_TOO_SHORT") {
+      fail("Check 12: assertIdeaLength did not throw INPUT_TOO_SHORT on empty");
+      assertLengthPassed = false;
+    }
+  }
+
+  try {
+    assertIdeaLength("123456789"); // 9 chars
+    fail("Check 12: assertIdeaLength failed to reject 9 char string");
+    assertLengthPassed = false;
+  } catch (e) {
+    if (!(e instanceof PromptInputError) || e.code !== "INPUT_TOO_SHORT") {
+      fail(
+        "Check 12: assertIdeaLength did not throw INPUT_TOO_SHORT on 9 chars",
+      );
+      assertLengthPassed = false;
+    }
+  }
+
+  try {
+    const hugeString = "a".repeat(20001);
+    assertIdeaLength(hugeString);
+    fail("Check 12: assertIdeaLength failed to reject >20000 char string");
+    assertLengthPassed = false;
+  } catch (e) {
+    if (!(e instanceof PromptInputError) || e.code !== "INPUT_TOO_LONG") {
+      fail(
+        "Check 12: assertIdeaLength did not throw INPUT_TOO_LONG on huge string",
+      );
+      assertLengthPassed = false;
+    }
+  }
+
+  try {
+    const exactMax = "a".repeat(MAX_INPUT_CHARS);
+    const result = assertIdeaLength(exactMax);
+    if (result.length !== MAX_INPUT_CHARS || MIN_INPUT_CHARS !== 10) {
+      fail(
+        "Check 12: assertIdeaLength truncated input of length 20000 or invalid MIN_INPUT_CHARS",
+      );
+      assertLengthPassed = false;
+    }
+  } catch (e) {
+    fail("Check 12: assertIdeaLength threw on valid 20000 char input", e);
+    assertLengthPassed = false;
+  }
+
+  if (assertLengthPassed) {
+    pass(
+      "Check 12: assertIdeaLength rejects empty, too-short and over-20000-character input and never truncates",
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check 13: Architecture schema requires stack and keeps components-to-modules
+  // ---------------------------------------------------------------------------
+  const archMissingStack = {
+    modules: [
+      {
+        name: "AuthService",
+        responsibility: "Auth",
+        requirement_keys: ["REQ-1"],
+      },
+    ],
+  };
+  const archComponentsRaw = {
+    stack: {
+      frontend: "React",
+      backend: "Node",
+      database: "Postgres",
+    },
+    components: [
+      {
+        name: "AuthService",
+        responsibility: "Auth",
+        requirement_keys: ["REQ-1"],
+      },
+    ],
+  };
+  const parseArchMissingStack =
+    ArchitectureOutputSchema.safeParse(archMissingStack);
+  const parseArchComponents =
+    ArchitectureOutputSchema.safeParse(archComponentsRaw);
+
+  if (
+    !parseArchMissingStack.success &&
+    parseArchComponents.success &&
+    parseArchComponents.data.modules.length === 1 &&
+    parseArchComponents.data.modules[0].name === "AuthService" &&
+    Array.isArray(parseArchComponents.data.assumptions)
+  ) {
+    pass(
+      "Check 13: architecture schema requires stack.frontend/backend/database and keeps components-to-modules",
+    );
+  } else {
+    fail(
+      "Check 13: architecture schema stack or components-to-modules failed",
+      {
+        missingStackSuccess: parseArchMissingStack.success,
+        componentsSuccess: parseArchComponents.success,
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check 14: Decompose accepts setup/testing/deployment without requirement_key
+  //           and rejects backend/frontend without one
+  // ---------------------------------------------------------------------------
+  const decompFoundationNoKey = {
+    nodes: [
+      {
+        node_key: "01.1",
+        phase: "01",
+        title: "Setup Repo",
+        type: "setup",
+        status: "not_started",
+      },
+      {
+        node_key: "02.1",
+        phase: "02",
+        title: "Core Service",
+        type: "backend",
+        requirement_key: "REQ-1",
+        status: "not_started",
+      },
+      {
+        node_key: "03.1",
+        phase: "03",
+        title: "Run Tests",
+        type: "testing",
+        status: "not_started",
+      },
+      {
+        node_key: "04.1",
+        phase: "04",
+        title: "Deploy Vercel",
+        type: "deployment",
+        status: "not_started",
+      },
+    ],
+    edges: [],
+  };
+
+  const decompBackendNoKey = {
+    nodes: [
+      {
+        node_key: "02.1",
+        phase: "02",
+        title: "Core Backend",
+        type: "backend",
+        status: "not_started",
+      },
+    ],
+    edges: [],
+  };
+
+  const decompFrontendNoKey = {
+    nodes: [
+      {
+        node_key: "02.1",
+        phase: "02",
+        title: "UI View",
+        type: "frontend",
+        status: "not_started",
+      },
+    ],
+    edges: [],
+  };
+
+  const parseFoundation = DecomposeOutputSchema.safeParse(
+    decompFoundationNoKey,
+  );
+  const parseBackendNoKey = DecomposeOutputSchema.safeParse(decompBackendNoKey);
+  const parseFrontendNoKey =
+    DecomposeOutputSchema.safeParse(decompFrontendNoKey);
+
+  if (
+    parseFoundation.success &&
+    !parseBackendNoKey.success &&
+    !parseFrontendNoKey.success &&
+    NODE_TYPES.length === 7 &&
+    FOUNDATION_NODE_TYPES.length === 3
+  ) {
+    pass(
+      "Check 14: decompose accepts a setup/testing/deployment node without requirement_key and rejects a backend/frontend node without one",
+    );
+  } else {
+    fail("Check 14: foundation node requirement_key rules failed", {
+      foundationSuccess: parseFoundation.success,
+      backendNoKeySuccess: parseBackendNoKey.success,
+      frontendNoKeySuccess: parseFrontendNoKey.success,
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check 15: Decompose rejects an unknown type
+  // ---------------------------------------------------------------------------
+  const decompInvalidType = {
+    nodes: [
+      {
+        node_key: "01.1",
+        phase: "01",
+        title: "Task with bad type",
+        type: "unknown_custom_type",
+        requirement_key: "REQ-1",
+      },
+    ],
+    edges: [],
+  };
+  const parseInvalidType = DecomposeOutputSchema.safeParse(decompInvalidType);
+  if (!parseInvalidType.success) {
+    pass("Check 15: decompose rejects an unknown type");
+  } else {
+    fail("Check 15: decompose failed to reject unknown type");
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check 16: Decompose still fails when a known requirement key is not used
+  // ---------------------------------------------------------------------------
+  const makeDecompTwoReqs = makeDecomposeOutputSchema(["REQ-1", "REQ-2"]);
+  const decompMissingReq2 = {
+    nodes: [
+      {
+        node_key: "01.1",
+        phase: "01",
+        title: "Setup",
+        type: "setup",
+      },
+      {
+        node_key: "02.1",
+        phase: "02",
+        title: "Backend 1",
+        type: "backend",
+        requirement_key: "REQ-1",
+      },
+    ],
+    edges: [],
+  };
+  const parseMissingReq2 = makeDecompTwoReqs.safeParse(decompMissingReq2);
+  if (!parseMissingReq2.success) {
+    pass(
+      "Check 16: decompose still fails when a known requirement key is not used by any node",
+    );
+  } else {
+    fail("Check 16: decompose allowed uncovered requirement key REQ-2");
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check 17: Criteria rejects 1 acceptance or 2 tests
+  // ---------------------------------------------------------------------------
+  const critOneAcceptance = {
+    acceptance: ["Single acceptance item"],
+    tests: ["Test 1", "Test 2", "Test 3"],
+  };
+  const critTwoTests = {
+    acceptance: ["Acceptance 1", "Acceptance 2"],
+    tests: ["Test 1", "Test 2"],
+  };
+  const critMinValid = {
+    acceptance: ["Acceptance 1", "Acceptance 2"],
+    tests: ["Test 1", "Test 2", "Test 3"],
+  };
+
+  const parseOneAcc = StrictNodeCriteriaSchema.safeParse(critOneAcceptance);
+  const parseTwoTests = StrictNodeCriteriaSchema.safeParse(critTwoTests);
+  const parseMinValid = StrictNodeCriteriaSchema.safeParse(critMinValid);
+
+  if (!parseOneAcc.success && !parseTwoTests.success && parseMinValid.success) {
+    pass("Check 17: criteria rejects 1 acceptance or 2 tests");
+  } else {
+    fail("Check 17: criteria minimum acceptance/test counts failed", {
+      oneAccSuccess: parseOneAcc.success,
+      twoTestsSuccess: parseTwoTests.success,
+      minValidSuccess: parseMinValid.success,
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check 18: chunkNodes splits 20 nodes into 3 batches
+  // ---------------------------------------------------------------------------
+  const twentyNodes = Array.from({ length: 20 }, (_, i) => ({
+    node_key: `01.${i + 1}`,
+    title: `Node ${i + 1}`,
+  }));
+  const chunks = chunkNodes(twentyNodes, MAX_NODES_PER_CRITERIA_CALL);
+  if (
+    chunks.length === 3 &&
+    chunks[0].length === 8 &&
+    chunks[1].length === 8 &&
+    chunks[2].length === 4
+  ) {
+    pass("Check 18: chunkNodes splits 20 nodes into 3 batches");
+  } else {
+    fail("Check 18: chunkNodes batch counts mismatch", {
+      numChunks: chunks.length,
+      chunkLengths: chunks.map((c) => c.length),
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check 19: buildCriteriaMessages throws TOO_MANY_NODES for 9 nodes
+  // ---------------------------------------------------------------------------
+  const nineNodes = Array.from({ length: 9 }, (_, i) => ({
+    node_key: `01.${i + 1}`,
+    title: `Node ${i + 1}`,
+  }));
+  try {
+    buildCriteriaMessages(nineNodes);
+    fail("Check 19: buildCriteriaMessages allowed 9 nodes without error");
+  } catch (e) {
+    if (e instanceof PromptInputError && e.code === "TOO_MANY_NODES") {
+      pass("Check 19: buildCriteriaMessages throws TOO_MANY_NODES for 9 nodes");
+    } else {
+      fail("Check 19: buildCriteriaMessages threw unexpected error", e);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check 20: mergeCriteria throws on a duplicate key
+  // ---------------------------------------------------------------------------
+  const batch1 = {
+    "01.1": {
+      acceptance: ["A1", "A2"],
+      tests: ["T1", "T2", "T3"],
+    },
+  };
+  const batch2 = {
+    "01.1": {
+      acceptance: ["A3", "A4"],
+      tests: ["T4", "T5", "T6"],
+    },
+  };
+  try {
+    mergeCriteria([batch1, batch2]);
+    fail("Check 20: mergeCriteria allowed duplicate node_key across batches");
+  } catch (e) {
+    if ((e as Error).message.includes("01.1")) {
+      pass("Check 20: mergeCriteria throws on a duplicate key");
+    } else {
+      fail("Check 20: mergeCriteria threw error without node_key name", e);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check 21: The language rule is present in every system message
+  // ---------------------------------------------------------------------------
+  const languageRuleSubstring =
+    "Write all human-readable text in the same language as the text inside the delimiter block";
+  const messagesToCheck = [
+    buildExtractMessages("Sample idea for testing system prompt").system,
+    buildArchitectureMessages([
+      { key: "REQ-1", title: "Title", description: "Desc" },
+    ]).system,
+    buildDecomposeMessages({ requirements: [], architecture: {} }).system,
+    buildCriteriaMessages([{ node_key: "01.1", title: "Title" }]).system,
+  ];
+
+  const allHaveLanguageRule =
+    BASE_SYSTEM_GUARD.includes(languageRuleSubstring) &&
+    messagesToCheck.every((sys) => sys.includes(languageRuleSubstring));
+  if (allHaveLanguageRule) {
+    pass("Check 21: the language rule is present in every system message");
+  } else {
+    fail("Check 21: language rule missing in one or more system messages");
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check 22: Versions are v2 and no model names are hardcoded
+  // ---------------------------------------------------------------------------
+  const allV2 =
+    EXTRACT_PROMPT_VERSION === "extract.v2" &&
+    ARCHITECTURE_PROMPT_VERSION === "architecture.v2" &&
+    DECOMPOSE_PROMPT_VERSION === "decompose.v2" &&
+    CRITERIA_PROMPT_VERSION === "criteria.v2";
+
+  if (allV2 && !foundModelReference) {
+    pass(
+      "Check 22: versions are v2 and no model names are hardcoded in the prompts directory",
+    );
+  } else {
+    fail("Check 22: version mismatch or hardcoded model names detected");
   }
 
   console.log("\n-------------------------------------------");

@@ -387,6 +387,7 @@ export interface GraphIntegrityOptions {
   knownRequirementKeys?: string[];
   requireRequirementKey?: boolean;
   requireFullCoverage?: boolean;
+  requirementKeyOptionalForTypes?: string[];
 }
 
 /**
@@ -529,6 +530,7 @@ export function checkGraphIntegrity(
     nodes: Array<{
       node_key: string;
       id?: string;
+      type?: string | null;
       requirement_id?: string | null;
       requirement_key?: string | null;
     }>;
@@ -593,7 +595,17 @@ export function checkGraphIntegrity(
     }
 
     if (options?.requireRequirementKey) {
-      if (!node.requirement_key || node.requirement_key.trim().length === 0) {
+      const isOptionalType =
+        options.requirementKeyOptionalForTypes &&
+        node.type &&
+        options.requirementKeyOptionalForTypes.some(
+          (t) => t.toLowerCase() === node.type?.trim().toLowerCase(),
+        );
+
+      if (
+        !isOptionalType &&
+        (!node.requirement_key || node.requirement_key.trim().length === 0)
+      ) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: `Node ${node.node_key} is missing required requirement_key`,
