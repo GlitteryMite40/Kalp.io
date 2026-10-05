@@ -1,3 +1,17 @@
+/**
+ * =============================================================================
+ * Kalp.io Graph Schemas (Task 03.2)
+ * =============================================================================
+ * Backend source of truth for all graph data shapes:
+ * - Requirement: key, title, description, id, project_id, created_at
+ * - Node: node_key, phase, title, status, requirement_key, requirement_id,
+ *   files, explanation, acceptance, tests, prompt
+ * - Edge: from_node, to_node, type (DEPENDS_ON, IMPLEMENTS, TESTS, PRODUCES, MODIFIES, BLOCKS)
+ * - Statuses: Not Started, Ready, In Progress, Committed, Completed, Blocked, Failed, Needs Review
+ * - Graph: composed graph with comprehensive integrity validation (cycles, self-edges, duplicates, coverage)
+ * =============================================================================
+ */
+
 import { z } from "zod";
 
 /**
