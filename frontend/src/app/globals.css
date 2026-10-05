@@ -3,6 +3,8 @@
 :root {
   --background: #09090b;
   --foreground: #f4f4f5;
+  --surface: #18181b;
+  --muted: #a1a1aa;
 }
 
 @theme inline {
@@ -15,6 +17,7 @@
 html {
   scroll-behavior: smooth;
   color-scheme: dark;
+  min-width: 360px;
 }
 
 body {
@@ -28,4 +31,23 @@ body {
     "Segoe UI",
     Roboto,
     sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+a {
+  text-underline-offset: 3px;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 359px) {
+  html {
+    min-width: 0;
+  }
 }
