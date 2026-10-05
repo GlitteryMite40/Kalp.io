@@ -4,20 +4,25 @@ import type postgres from "postgres";
 import { getDb } from "@/lib/db";
 import { BadRequestError, UnauthorizedError } from "@/lib/errors";
 import { type NodeStatus, toDbNodeStatus } from "@/lib/schema";
+import {
+  OWNER_COOKIE_NAME,
+  FALLBACK_COOKIE_NAME,
+  OWNER_HEADER_NAME,
+  COOKIE_MAX_AGE,
+  isValidOwnerId,
+  getOwnerCookieOptions,
+} from "./sessionShared";
 
-export const OWNER_COOKIE_NAME = "kalp_owner_id";
-export const FALLBACK_COOKIE_NAME = "owner_id";
-export const OWNER_HEADER_NAME = "x-owner-id";
-export const COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1 year (long-lived anonymous session)
+export {
+  OWNER_COOKIE_NAME,
+  FALLBACK_COOKIE_NAME,
+  OWNER_HEADER_NAME,
+  COOKIE_MAX_AGE,
+  isValidOwnerId,
+  getOwnerCookieOptions,
+};
 
-const UUID_REGEX =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function isValidUuid(id: unknown): id is string {
-  return typeof id === "string" && UUID_REGEX.test(id.trim());
-}
-
-export const isValidOwnerId = isValidUuid;
+const isValidUuid = isValidOwnerId;
 
 export function assertValidUuid(
   id: unknown,
@@ -27,23 +32,6 @@ export function assertValidUuid(
     throw new BadRequestError(message, { code: "INVALID_UUID" });
   }
   return (id as string).trim();
-}
-
-/**
- * Returns cookie options for the anonymous owner session.
- * Uses httpOnly: true, SameSite=Lax, and Secure in production.
- */
-export function getOwnerCookieOptions(
-  isProduction: boolean = process.env.NODE_ENV === "production",
-) {
-  return {
-    name: OWNER_COOKIE_NAME,
-    httpOnly: true,
-    secure: isProduction,
-    sameSite: "lax" as const,
-    path: "/",
-    maxAge: COOKIE_MAX_AGE,
-  };
 }
 
 /**

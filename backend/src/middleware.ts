@@ -5,7 +5,7 @@ import {
   OWNER_HEADER_NAME,
   isValidOwnerId,
   getOwnerCookieOptions,
-} from "@/server/session";
+} from "@/server/sessionShared";
 
 /**
  * Next.js Middleware:
