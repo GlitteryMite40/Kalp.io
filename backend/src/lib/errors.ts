@@ -28,3 +28,15 @@ export class NotFoundError extends ApiError {
     super(message, 404, "NOT_FOUND");
   }
 }
+
+export class UnauthorizedError extends ApiError {
+  constructor(message = "Unauthorized", details?: unknown) {
+    super(message, 401, "UNAUTHORIZED", details);
+  }
+}
+
+export class ForbiddenError extends ApiError {
+  constructor(message = "Forbidden", details?: unknown) {
+    super(message, 403, "FORBIDDEN", details);
+  }
+}
