@@ -4,3 +4,4 @@ export * from "./extract";
 export * from "./architecture";
 export * from "./decompose";
 export * from "./validate";
+export * from "./criteria";
