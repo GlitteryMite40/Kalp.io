@@ -8,11 +8,14 @@ import {
 } from "@/server/sessionShared";
 
 /**
- * Next.js Middleware:
+ * Next.js Proxy (formerly Middleware):
+ * Runs on the Node.js runtime (Next.js 16 `proxy` convention). Edge middleware is
+ * not supported when deploying as a Vercel Service, so this must NOT be `middleware.ts`.
+ *
  * Issues a random anonymous owner ID in an httpOnly, Secure, SameSite=Lax cookie on first visit.
  * Forwards verified owner ID in 'x-owner-id' request header for downstream handlers.
  */
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   // Check if owner cookie exists and is a valid UUID
   const cookieVal =
     request.cookies.get(OWNER_COOKIE_NAME)?.value ||

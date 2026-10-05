@@ -2,7 +2,7 @@
  * Edge-safe session primitives.
  *
  * This module MUST NOT import Node.js-only APIs (node:crypto, postgres, fs, db)
- * because it is consumed by `src/middleware.ts`, which runs on the Edge runtime.
+ * because it is consumed by `src/proxy.ts`. Keeping it dependency-free keeps the proxy bundle small.
  * Node-only helpers (DB queries, etc.) live in `./session.ts`.
  */
 

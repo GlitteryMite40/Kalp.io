@@ -1,5 +1,5 @@
 /**
- * Test Suite for Task 04.5: Anonymous owner (backend/src/server/session.ts, backend/src/middleware.ts)
+ * Test Suite for Task 04.5: Anonymous owner (backend/src/server/session.ts, backend/src/proxy.ts)
  *
  * Verifies:
  * 1. Missing cookie:
@@ -21,7 +21,7 @@
 
 import fs from "node:fs";
 import { NextRequest } from "next/server";
-import { middleware } from "../src/middleware";
+import { proxy as middleware } from "../src/proxy";
 import {
   OWNER_COOKIE_NAME,
   OWNER_HEADER_NAME,
