@@ -25,7 +25,8 @@
     "test:prompt": "tsx scripts/test-prompt.ts",
     "test:save-plan": "tsx --env-file=.env.local scripts/test-save-plan.ts",
     "test:session": "tsx --env-file=.env.local scripts/test-session.ts",
-    "test": "npm run test:schema && npm run test:prompts && npm run test:extract && npm run test:architecture && npm run test:decompose && npm run test:validate && npm run test:criteria && npm run test:prompt && npm run test:save-plan && npm run test:session && npm run llm:check:offline",
+    "test:projects": "tsx --env-file=.env.local scripts/test-post-projects.ts",
+    "test": "npm run test:schema && npm run test:prompts && npm run test:extract && npm run test:architecture && npm run test:decompose && npm run test:validate && npm run test:criteria && npm run test:prompt && npm run test:save-plan && npm run test:session && npm run test:projects && npm run llm:check:offline",
     "prompt:smoke": "tsx --env-file=.env.local scripts/prompt-smoke.ts"
   },
   "dependencies": {
