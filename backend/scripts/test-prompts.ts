@@ -26,6 +26,7 @@ import {
   DECOMPOSE_PROMPT_VERSION,
   DecomposeOutputSchema,
   makeDecomposeOutputSchema,
+  validateDecomposeStructure,
   NODE_TYPES,
   FOUNDATION_NODE_TYPES,
 } from "../src/server/prompts/decompose";
@@ -133,7 +134,7 @@ async function runPromptTests() {
     extractMsg.version === EXTRACT_PROMPT_VERSION &&
     ARCHITECTURE_PROMPT_VERSION === "architecture.v2" &&
     archMsg.version === ARCHITECTURE_PROMPT_VERSION &&
-    DECOMPOSE_PROMPT_VERSION === "decompose.v2" &&
+    DECOMPOSE_PROMPT_VERSION === "decompose.v3" &&
     decompMsg.version === DECOMPOSE_PROMPT_VERSION &&
     CRITERIA_PROMPT_VERSION === "criteria.v2" &&
     critMsg.version === CRITERIA_PROMPT_VERSION;
@@ -436,7 +437,10 @@ async function runPromptTests() {
       hosting: "Vercel",
       other: [],
     },
-    assumptions: ["Vercel serverless runtime"],
+    assumptions: [
+      "Vercel serverless runtime",
+      "Postgres for relational persistence",
+    ],
     modules: [
       {
         name: "AuthService",
@@ -454,7 +458,10 @@ async function runPromptTests() {
       hosting: "Vercel",
       other: [],
     },
-    assumptions: ["Vercel serverless runtime"],
+    assumptions: [
+      "Vercel serverless runtime",
+      "Postgres for relational persistence",
+    ],
     modules: [
       {
         name: "AuthService",
@@ -477,6 +484,7 @@ async function runPromptTests() {
       hosting: "Vercel",
       other: [],
     },
+    assumptions: ["Assumption 1", "Assumption 2"],
     modules: [],
   };
 
@@ -499,6 +507,10 @@ async function runPromptTests() {
       hosting: "Vercel",
       other: [],
     },
+    assumptions: [
+      "Vercel serverless runtime",
+      "Postgres for relational persistence",
+    ],
     modules: [
       {
         name: "AuthService",
@@ -1163,6 +1175,7 @@ async function runPromptTests() {
       backend: "Node",
       database: "Postgres",
     },
+    assumptions: ["Assumption 1", "Assumption 2"],
     components: [
       {
         name: "AuthService",
@@ -1181,7 +1194,8 @@ async function runPromptTests() {
     parseArchComponents.success &&
     parseArchComponents.data.modules.length === 1 &&
     parseArchComponents.data.modules[0].name === "AuthService" &&
-    Array.isArray(parseArchComponents.data.assumptions)
+    Array.isArray(parseArchComponents.data.assumptions) &&
+    parseArchComponents.data.assumptions.length === 2
   ) {
     pass(
       "Check 13: architecture schema requires stack.frontend/backend/database and keeps components-to-modules",
@@ -1232,7 +1246,11 @@ async function runPromptTests() {
         status: "not_started",
       },
     ],
-    edges: [],
+    edges: [
+      { from_node: "02.1", to_node: "01.1", type: "DEPENDS_ON" },
+      { from_node: "03.1", to_node: "02.1", type: "DEPENDS_ON" },
+      { from_node: "04.1", to_node: "03.1", type: "DEPENDS_ON" },
+    ],
   };
 
   const decompBackendNoKey = {
@@ -1328,7 +1346,13 @@ async function runPromptTests() {
         requirement_key: "REQ-1",
       },
     ],
-    edges: [],
+    edges: [
+      {
+        from_node: "02.1",
+        to_node: "01.1",
+        type: "DEPENDS_ON",
+      },
+    ],
   };
   const parseMissingReq2 = makeDecompTwoReqs.safeParse(decompMissingReq2);
   if (!parseMissingReq2.success) {
@@ -1459,20 +1483,307 @@ async function runPromptTests() {
   }
 
   // ---------------------------------------------------------------------------
-  // Check 22: Versions are v2 and no model names are hardcoded
+  // Check 22: Versions and no model names are hardcoded
   // ---------------------------------------------------------------------------
-  const allV2 =
+  const allVersionsValid =
     EXTRACT_PROMPT_VERSION === "extract.v2" &&
     ARCHITECTURE_PROMPT_VERSION === "architecture.v2" &&
-    DECOMPOSE_PROMPT_VERSION === "decompose.v2" &&
-    CRITERIA_PROMPT_VERSION === "criteria.v2";
+    DECOMPOSE_PROMPT_VERSION === "decompose.v3" &&
+    CRITERIA_PROMPT_VERSION === "criteria.v2" &&
+    PROMPT_VERSIONS.decompose === "decompose.v3";
 
-  if (allV2 && !foundModelReference) {
+  if (allVersionsValid && !foundModelReference) {
     pass(
-      "Check 22: versions are v2 and no model names are hardcoded in the prompts directory",
+      "Check 22: versions are v2/v3 and no model names are hardcoded in the prompts directory",
     );
   } else {
     fail("Check 22: version mismatch or hardcoded model names detected");
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check 23: Architecture with one assumption rejected, two assumptions accepted
+  // ---------------------------------------------------------------------------
+  const archOneAssumption = {
+    stack: {
+      frontend: "React",
+      backend: "Node",
+      database: "Postgres",
+    },
+    assumptions: ["Single assumption only"],
+    modules: [
+      {
+        name: "AuthService",
+        responsibility: "Auth",
+        requirement_keys: ["REQ-1"],
+      },
+    ],
+  };
+  const archTwoAssumptions = {
+    stack: {
+      frontend: "React",
+      backend: "Node",
+      database: "Postgres",
+    },
+    assumptions: ["First assumption", "Second assumption"],
+    modules: [
+      {
+        name: "AuthService",
+        responsibility: "Auth",
+        requirement_keys: ["REQ-1"],
+      },
+    ],
+  };
+
+  const parseOneAssump = ArchitectureOutputSchema.safeParse(archOneAssumption);
+  const parseTwoAssump = ArchitectureOutputSchema.safeParse(archTwoAssumptions);
+
+  if (!parseOneAssump.success && parseTwoAssump.success) {
+    pass(
+      "Check 23: architecture with one assumption rejected and two accepted",
+    );
+  } else {
+    fail("Check 23: architecture assumption count validation failed", {
+      oneSuccess: parseOneAssump.success,
+      twoSuccess: parseTwoAssump.success,
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check 24: Decompose rejects an orphan node outside the first phase
+  // ---------------------------------------------------------------------------
+  const decompOrphan = {
+    nodes: [
+      {
+        node_key: "01.1",
+        phase: "01",
+        title: "Setup",
+        type: "setup",
+      },
+      {
+        node_key: "02.1",
+        phase: "02",
+        title: "Database",
+        type: "database",
+        requirement_key: "REQ-1",
+      },
+    ],
+    edges: [], // 02.1 has no outgoing DEPENDS_ON edge
+  };
+  const parseOrphan = DecomposeOutputSchema.safeParse(decompOrphan);
+  if (
+    !parseOrphan.success &&
+    typeof validateDecomposeStructure === "function" &&
+    parseOrphan.error.issues.some((i) =>
+      i.message.includes("Node 02.1 has no DEPENDS_ON prerequisite"),
+    )
+  ) {
+    pass(
+      "Check 24: decompose rejects an orphan node outside the first phase with exact message",
+    );
+  } else {
+    fail("Check 24: orphan node was not rejected with expected message", {
+      success: parseOrphan.success,
+      errors: parseOrphan.error?.issues,
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check 25: Decompose rejects a reversed-phase DEPENDS_ON edge
+  // ---------------------------------------------------------------------------
+  const decompReversed = {
+    nodes: [
+      {
+        node_key: "01.1",
+        phase: "01",
+        title: "Setup",
+        type: "setup",
+      },
+      {
+        node_key: "02.1",
+        phase: "02",
+        title: "Backend",
+        type: "backend",
+        requirement_key: "REQ-1",
+      },
+    ],
+    edges: [
+      // 01.1 depends on 02.1: to_node (02.1) is later phase than from_node (01.1)
+      {
+        from_node: "01.1",
+        to_node: "02.1",
+        type: "DEPENDS_ON",
+      },
+    ],
+  };
+  const parseReversed = DecomposeOutputSchema.safeParse(decompReversed);
+  if (
+    !parseReversed.success &&
+    parseReversed.error.issues.some((i) =>
+      i.message.includes(
+        "Edge 01.1 -> 02.1 depends on a later phase; direction looks reversed",
+      ),
+    )
+  ) {
+    pass(
+      "Check 25: decompose rejects a reversed-phase DEPENDS_ON edge with exact message",
+    );
+  } else {
+    fail(
+      "Check 25: reversed-phase edge was not rejected with expected message",
+      {
+        success: parseReversed.success,
+        errors: parseReversed.error?.issues,
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check 26: Decompose accepts same-phase DEPENDS_ON edge
+  // ---------------------------------------------------------------------------
+  const decompSamePhase = {
+    nodes: [
+      {
+        node_key: "01.1",
+        phase: "01",
+        title: "Setup",
+        type: "setup",
+      },
+      {
+        node_key: "02.1",
+        phase: "02",
+        title: "Backend API",
+        type: "backend",
+        requirement_key: "REQ-1",
+      },
+      {
+        node_key: "02.2",
+        phase: "02",
+        title: "Backend Middleware",
+        type: "backend",
+        requirement_key: "REQ-1",
+      },
+    ],
+    edges: [
+      { from_node: "02.1", to_node: "01.1", type: "DEPENDS_ON" },
+      // Same-phase edge within phase 02:
+      { from_node: "02.2", to_node: "02.1", type: "DEPENDS_ON" },
+    ],
+  };
+  const parseSamePhase = DecomposeOutputSchema.safeParse(decompSamePhase);
+  if (parseSamePhase.success) {
+    pass("Check 26: decompose accepts same-phase DEPENDS_ON edge");
+  } else {
+    fail("Check 26: same-phase edge was rejected", {
+      errors: parseSamePhase.error?.issues,
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check 27: Decompose rejects 61 nodes
+  // ---------------------------------------------------------------------------
+  const sixtyOneNodes = [
+    {
+      node_key: "01.1",
+      phase: "01",
+      title: "Setup",
+      type: "setup",
+    },
+    ...Array.from({ length: 60 }, (_, i) => ({
+      node_key: `02.${i + 1}`,
+      phase: "02",
+      title: `Node ${i + 1}`,
+      type: "backend",
+      requirement_key: "REQ-1",
+    })),
+  ];
+  const sixtyOneEdges = Array.from({ length: 60 }, (_, i) => ({
+    from_node: `02.${i + 1}`,
+    to_node: "01.1",
+    type: "DEPENDS_ON",
+  }));
+  const parseSixtyOne = DecomposeOutputSchema.safeParse({
+    nodes: sixtyOneNodes,
+    edges: sixtyOneEdges,
+  });
+  if (
+    !parseSixtyOne.success &&
+    parseSixtyOne.error.issues.some((i) => i.message.includes("60 nodes"))
+  ) {
+    pass("Check 27: decompose rejects 61 nodes");
+  } else {
+    fail("Check 27: 61 nodes was not rejected", {
+      success: parseSixtyOne.success,
+      errors: parseSixtyOne.error?.issues,
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check 28: Decompose normalizes type 'Backend' to 'backend'
+  // ---------------------------------------------------------------------------
+  const decompMixedCaseType = {
+    nodes: [
+      {
+        node_key: "01.1",
+        phase: "01",
+        title: "Setup",
+        type: "Setup",
+      },
+      {
+        node_key: "02.1",
+        phase: "02",
+        title: "Backend API",
+        type: "Backend",
+        requirement_key: "REQ-1",
+      },
+    ],
+    edges: [{ from_node: "02.1", to_node: "01.1", type: "DEPENDS_ON" }],
+  };
+  const parseMixedCase = DecomposeOutputSchema.safeParse(decompMixedCaseType);
+  if (
+    parseMixedCase.success &&
+    parseMixedCase.data.nodes[0].type === "setup" &&
+    parseMixedCase.data.nodes[1].type === "backend"
+  ) {
+    pass("Check 28: decompose normalizes type 'Backend' to 'backend'");
+  } else {
+    fail("Check 28: type normalization failed", {
+      success: parseMixedCase.success,
+      data: parseMixedCase.data?.nodes,
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check 29: decompose.v3 prompt text contains guidance and 2-prereq example
+  // ---------------------------------------------------------------------------
+  const decompMessages = buildDecomposeMessages({
+    requirements: [],
+    architecture: {},
+  });
+  const hasEveryPrereq = decompMessages.prompt
+    .toLowerCase()
+    .includes("every direct prerequisite");
+  const hasIndependent = decompMessages.prompt.includes(
+    "Independent work must not be chained",
+  );
+  const hasTwoEdgesExample =
+    decompMessages.prompt.includes('"from_node": "03.1"') &&
+    decompMessages.prompt.includes('"to_node": "02.1"') &&
+    decompMessages.prompt.includes('"to_node": "02.2"');
+  const hasVersionV3 =
+    decompMessages.version === "decompose.v3" &&
+    PROMPT_VERSIONS.decompose === "decompose.v3";
+
+  if (hasEveryPrereq && hasIndependent && hasTwoEdgesExample && hasVersionV3) {
+    pass(
+      "Check 29: decompose.v3 prompt text contains 'every direct prerequisite' and 'independent' guidance, two-prereq example, and version is decompose.v3",
+    );
+  } else {
+    fail("Check 29: decompose.v3 prompt content validation failed", {
+      hasEveryPrereq,
+      hasIndependent,
+      hasTwoEdgesExample,
+      hasVersionV3,
+    });
   }
 
   console.log("\n-------------------------------------------");

@@ -1,14 +1,15 @@
 /**
- * Real-model smoke test for prompt templates and graph schemas (v2).
+ * Real-model smoke test for prompt templates and graph schemas (v2/v3).
  *
  * NOTE:
- * - This script spends about four Gemini API calls on the active tier.
+ * - This script spends about four to six Gemini API calls on the active tier.
  * - On the Google AI Studio free tier, prompt inputs may be reviewed by human
  *   reviewers or used to train Google models. Therefore, ONLY sample or synthetic
  *   text is allowed here. Never pass proprietary, confidential, or customer data.
  */
 
 import { generateJson } from "../src/server/llm";
+import { analyzeGraphShape } from "../src/lib/schema";
 import {
   buildExtractMessages,
   ExtractOutputSchema,
@@ -25,6 +26,7 @@ import {
   FOUNDATION_NODE_TYPES,
   MAX_NODES_PER_CRITERIA_CALL,
   chunkNodes,
+  mergeCriteria,
   type CriteriaInputNode,
 } from "../src/server/prompts/index";
 
@@ -67,7 +69,9 @@ async function generateWithRetry<T>(
 }
 
 async function runPromptSmoke() {
-  console.log("=== RUNNING PROMPT TEMPLATES REAL-MODEL SMOKE TEST (v2) ===\n");
+  console.log(
+    "=== RUNNING PROMPT TEMPLATES REAL-MODEL SMOKE TEST (v3 pipeline) ===\n",
+  );
 
   // ---------------------------------------------------------------------------
   // Stage 1: Extract
@@ -142,33 +146,51 @@ async function runPromptSmoke() {
     process.exit(1);
   }
 
-  const nodeCount = decompResult.data.nodes.length;
-  const edgeCount = decompResult.data.edges.length;
+  const shape = analyzeGraphShape(
+    decompResult.data.nodes,
+    decompResult.data.edges,
+  );
 
   const foundationNodeCount = decompResult.data.nodes.filter((n) =>
     (FOUNDATION_NODE_TYPES as readonly string[]).includes(
       (n.type ?? "").toLowerCase().trim(),
     ),
   ).length;
-  const nonFoundationNodeCount = nodeCount - foundationNodeCount;
+  const nonFoundationNodeCount = shape.nodeCount - foundationNodeCount;
 
   console.log("\nSTAGE 3 [Decompose]: PASS");
-  console.log(`  node count:        ${nodeCount}`);
-  console.log(`  edge count:        ${edgeCount}`);
-  console.log(`  foundation nodes:  ${foundationNodeCount}`);
-  console.log(`  non-foundation:    ${nonFoundationNodeCount}`);
+  console.log(`  node count:          ${shape.nodeCount}`);
+  console.log(`  edge count:          ${shape.edgeCount}`);
+  console.log(`  depends_on count:    ${shape.dependsOnEdgeCount}`);
+  console.log(`  multi-prereq nodes:  ${shape.multiPrereqNodes}`);
+  console.log(`  max prereqs:         ${shape.maxPrereqs}`);
+  console.log(`  longest path length: ${shape.longestPathLength}`);
+  console.log(`  max parallel width:  ${shape.maxParallelWidth}`);
+  console.log(`  is strict chain:     ${shape.isStrictChain}`);
+  console.log(`  foundation nodes:    ${foundationNodeCount}`);
+  console.log(`  non-foundation:      ${nonFoundationNodeCount}`);
 
-  if (nodeCount < 12 || nodeCount > 40) {
+  if (
+    shape.isStrictChain ||
+    shape.multiPrereqNodes === 0 ||
+    shape.maxParallelWidth === 1
+  ) {
     console.warn(
-      `  [Warning] Node count ${nodeCount} is outside recommended 12-40 range.`,
+      `  WARN: Graph shape lacks branching or parallelism (isStrictChain: ${shape.isStrictChain}, multiPrereqNodes: ${shape.multiPrereqNodes}, maxParallelWidth: ${shape.maxParallelWidth})`,
+    );
+  }
+
+  if (shape.nodeCount < 12 || shape.nodeCount > 40) {
+    console.warn(
+      `  [Warning] Node count ${shape.nodeCount} is outside recommended 12-40 range.`,
     );
   }
 
   // ---------------------------------------------------------------------------
-  // Stage 4: Criteria (First batch up to 8 nodes)
+  // Stage 4: Criteria (Full batches across ALL nodes)
   // ---------------------------------------------------------------------------
-  let critResult: { data: CriteriaOutput; model: string } | null = null;
-  let batchNodeKeys: string[] = [];
+  let mergedCriteria: CriteriaOutput = {};
+  let batchesCount = 0;
   try {
     const nodeMap = new Map(
       decompResult.data.nodes.map((n) => [n.node_key, n]),
@@ -204,25 +226,47 @@ async function runPromptSmoke() {
     );
 
     const batches = chunkNodes(enrichedNodes, MAX_NODES_PER_CRITERIA_CALL);
-    const firstBatch = batches[0];
-    batchNodeKeys = firstBatch.map((n) => n.node_key);
+    batchesCount = batches.length;
+    const criteriaBatches: CriteriaOutput[] = [];
 
-    const critMsgs = buildCriteriaMessages(firstBatch);
-    const critSchema = makeCriteriaSchema(batchNodeKeys);
-    critResult = await generateWithRetry(critMsgs.prompt, {
-      system: critMsgs.system,
-      schema: critSchema,
-      maxOutputTokens: 4096,
-    });
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
+      const batchNodeKeys = batch.map((n) => n.node_key);
+      const critMsgs = buildCriteriaMessages(batch);
+      const critSchema = makeCriteriaSchema(batchNodeKeys);
+      const batchRes = await generateWithRetry(critMsgs.prompt, {
+        system: critMsgs.system,
+        schema: critSchema,
+        maxOutputTokens: 4096,
+      });
+      criteriaBatches.push(batchRes.data);
+    }
+
+    mergedCriteria = mergeCriteria(criteriaBatches);
   } catch (err) {
     console.error("\nSTAGE 4 [Criteria]: FAIL");
     console.error("  Error:", (err as Error).message);
     process.exit(1);
   }
 
-  const criteriaKeys = Object.keys(critResult.data || {});
+  const allDecompNodeKeys = new Set(
+    decompResult.data.nodes.map((n) => n.node_key),
+  );
+  const mergedKeys = Object.keys(mergedCriteria || {});
+  const coversAll =
+    mergedKeys.length === allDecompNodeKeys.size &&
+    mergedKeys.every((k) => allDecompNodeKeys.has(k));
+
+  if (!coversAll) {
+    console.error(
+      "\nSTAGE 4 [Criteria]: FAIL - merged criteria does not cover every node key exactly once",
+    );
+    process.exit(1);
+  }
+
   console.log("\nSTAGE 4 [Criteria]: PASS");
-  console.log(`  criteria keys returned: [${criteriaKeys.join(", ")}]`);
+  console.log(`  criteria batches:    ${batchesCount}`);
+  console.log(`  total criteria keys: ${mergedKeys.length}`);
 
   console.log("\nALL 4 PIPELINE STAGES PASSED REAL-MODEL VALIDATION.");
 }

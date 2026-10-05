@@ -11,7 +11,7 @@ import {
   type PromptMessages,
 } from "./shared";
 
-export const DECOMPOSE_PROMPT_VERSION = "decompose.v2";
+export const DECOMPOSE_PROMPT_VERSION = "decompose.v3";
 
 export const NODE_TYPES = [
   "setup",
@@ -32,6 +32,106 @@ export const FOUNDATION_NODE_TYPES = [
 ] as const;
 
 export type FoundationNodeType = (typeof FOUNDATION_NODE_TYPES)[number];
+
+export const DecomposeNodeSchema = z.preprocess((val) => {
+  if (typeof val === "object" && val !== null && !Array.isArray(val)) {
+    const obj = val as Record<string, unknown>;
+    if (typeof obj.type === "string") {
+      return { ...obj, type: obj.type.trim().toLowerCase() };
+    }
+  }
+  return val;
+}, NodeSchema);
+
+export function validateDecomposeStructure(
+  data: {
+    nodes: Array<{
+      node_key: string;
+      phase: string;
+      type?: string | null;
+    }>;
+    edges: Array<{
+      from_node: string;
+      to_node: string;
+      type: string;
+    }>;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  // Reject more than 60 nodes
+  if (data.nodes.length > 60) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Graph cannot contain more than 60 nodes",
+      path: ["nodes"],
+    });
+  }
+
+  // Determine first phase numerically
+  const validPhases = Array.from(
+    new Set(
+      data.nodes
+        .map((n) => n.phase)
+        .filter(
+          (p): p is string => typeof p === "string" && p.trim().length > 0,
+        ),
+    ),
+  ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+  const firstPhase = validPhases[0];
+
+  // Map node_key to phase
+  const nodePhaseMap = new Map<string, string>();
+  for (const node of data.nodes) {
+    if (typeof node.phase === "string") {
+      nodePhaseMap.set(node.node_key, node.phase);
+    }
+  }
+
+  // Reject any node outside the first phase that has no outgoing DEPENDS_ON edge (orphan)
+  const outgoingDependsOn = new Set<string>();
+  for (const edge of data.edges) {
+    if (edge.type === "DEPENDS_ON") {
+      outgoingDependsOn.add(edge.from_node);
+    }
+  }
+
+  for (let i = 0; i < data.nodes.length; i++) {
+    const node = data.nodes[i];
+    const isOutsideFirstPhase =
+      firstPhase !== undefined &&
+      typeof node.phase === "string" &&
+      node.phase.localeCompare(firstPhase, undefined, { numeric: true }) > 0;
+
+    if (isOutsideFirstPhase && !outgoingDependsOn.has(node.node_key)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Node ${node.node_key} has no DEPENDS_ON prerequisite`,
+        path: ["nodes", i],
+      });
+    }
+  }
+
+  // Reject a DEPENDS_ON edge whose to_node is in a LATER phase than its from_node (reversed direction)
+  for (let i = 0; i < data.edges.length; i++) {
+    const edge = data.edges[i];
+    if (edge.type === "DEPENDS_ON") {
+      const fromPhase = nodePhaseMap.get(edge.from_node);
+      const toPhase = nodePhaseMap.get(edge.to_node);
+      if (fromPhase && toPhase) {
+        if (
+          toPhase.localeCompare(fromPhase, undefined, { numeric: true }) > 0
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Edge ${edge.from_node} -> ${edge.to_node} depends on a later phase; direction looks reversed`,
+            path: ["edges", i],
+          });
+        }
+      }
+    }
+  }
+}
 
 function validateDecomposeNodes(
   nodes: Array<{
@@ -93,10 +193,11 @@ function validateDecomposeNodes(
 
 export const DecomposeOutputSchema = z
   .object({
-    nodes: z.array(NodeSchema).min(1, "At least one node is required"),
+    nodes: z.array(DecomposeNodeSchema).min(1, "At least one node is required"),
     edges: z.array(EdgeSchema).default([]),
   })
   .superRefine((data, ctx) => {
+    validateDecomposeStructure(data, ctx);
     validateDecomposeNodes(data.nodes, ctx);
     checkGraphIntegrity(data, ctx, {
       requireRequirementKey: true,
@@ -111,10 +212,13 @@ export function makeDecomposeOutputSchema(
   const requireCoverage = opts?.requireCoverage ?? true;
   return z
     .object({
-      nodes: z.array(NodeSchema).min(1, "At least one node is required"),
+      nodes: z
+        .array(DecomposeNodeSchema)
+        .min(1, "At least one node is required"),
       edges: z.array(EdgeSchema).default([]),
     })
     .superRefine((data, ctx) => {
+      validateDecomposeStructure(data, ctx);
       validateDecomposeNodes(data.nodes, ctx);
       checkGraphIntegrity(data, ctx, {
         knownRequirementKeys: requirementKeys,
@@ -161,7 +265,9 @@ Field and Identity Rules:
 
 Edge Direction and Dependency Rules:
 - ${DEPENDS_ON_DIRECTION_TEXT}
-- Every node outside the first phase has at least one outgoing DEPENDS_ON edge to a direct prerequisite. Use direct prerequisites only, no transitive shortcuts.
+- A node depends on EVERY direct prerequisite it genuinely needs, not just one (for example a UI page that needs both the API endpoint and the layout shell depends on both).
+- Independent work must not be chained: database setup and frontend scaffolding both depend on the setup node, not on each other. Within a phase, nodes that do not need each other must share a prerequisite instead of following one another. Still direct prerequisites only, no transitive shortcuts, no cycles.
+- Target graph shape (guidance): at least a quarter of non-first-phase nodes should have two or more DEPENDS_ON prerequisites when the architecture allows it, and the graph should contain at least two independent branches before the testing phase.
 
 Requirements Mapping:
 - Every known requirement key must be covered by at least one node.
@@ -183,18 +289,53 @@ Required JSON output format:
     {
       "node_key": "02.1",
       "phase": "02",
-      "title": "Database Schema & Tables",
+      "title": "Database Schema & Migration",
       "type": "database",
       "status": "not_started",
       "requirement_key": "REQ-1",
       "files": ["supabase/migrations/001_init.sql"],
       "explanation": "Creates core data tables according to requirement specifications."
+    },
+    {
+      "node_key": "02.2",
+      "phase": "02",
+      "title": "Frontend Layout Shell",
+      "type": "frontend",
+      "status": "not_started",
+      "requirement_key": "REQ-2",
+      "files": ["src/app/layout.tsx"],
+      "explanation": "Creates base UI shell and navigation layout."
+    },
+    {
+      "node_key": "03.1",
+      "phase": "03",
+      "title": "Dashboard Page Integration",
+      "type": "integration",
+      "status": "not_started",
+      "requirement_key": "REQ-2",
+      "files": ["src/app/dashboard/page.tsx"],
+      "explanation": "Connects UI dashboard to backend data queries."
     }
   ],
   "edges": [
     {
       "from_node": "02.1",
       "to_node": "01.1",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from_node": "02.2",
+      "to_node": "01.1",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from_node": "03.1",
+      "to_node": "02.1",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from_node": "03.1",
+      "to_node": "02.2",
       "type": "DEPENDS_ON"
     }
   ]

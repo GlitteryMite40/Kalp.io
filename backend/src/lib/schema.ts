@@ -751,3 +751,167 @@ export const EdgeType = EdgeTypeSchema;
 export const NodeStatus = NodeStatusSchema;
 export const Status = NodeStatusSchema;
 export const Graph = GraphSchema;
+
+export interface GraphShapeAnalysis {
+  nodeCount: number;
+  edgeCount: number;
+  dependsOnEdgeCount: number;
+  roots: string[];
+  multiPrereqNodes: number;
+  maxPrereqs: number;
+  longestPathLength: number;
+  maxParallelWidth: number;
+  isStrictChain: boolean;
+}
+
+/**
+ * Analyzes the structural shape and dependency topology of a build graph.
+ *
+ * In Kalp.io DEPENDS_ON semantics:
+ * - `from_node` DEPENDS ON `to_node` (to_node is the prerequisite, from_node is the dependent).
+ * - Roots are nodes that have 0 prerequisites.
+ * - depth = longest distance from a root.
+ * - longestPathLength counts nodes on the longest DEPENDS_ON path.
+ * - maxParallelWidth is the largest number of nodes sharing the same depth level.
+ * - isStrictChain is true when every node has at most one prerequisite and at most one dependent.
+ *
+ * Uses iterative algorithms and handles unknown edge endpoints without throwing.
+ */
+export function analyzeGraphShape(
+  nodes: Array<{ node_key: string; id?: string }>,
+  edges: Array<{ from_node: string; to_node: string; type: string }>,
+): GraphShapeAnalysis {
+  const nodeCount = nodes.length;
+  const edgeCount = edges.length;
+
+  if (nodeCount === 0) {
+    return {
+      nodeCount: 0,
+      edgeCount,
+      dependsOnEdgeCount: edges.filter((e) => e.type === "DEPENDS_ON").length,
+      roots: [],
+      multiPrereqNodes: 0,
+      maxPrereqs: 0,
+      longestPathLength: 0,
+      maxParallelWidth: 0,
+      isStrictChain: false,
+    };
+  }
+
+  // Canonical mapping
+  const nodeKeys = new Set<string>();
+  const idOrKeyToNodeKey = new Map<string, string>();
+  for (const node of nodes) {
+    nodeKeys.add(node.node_key);
+    idOrKeyToNodeKey.set(node.node_key, node.node_key);
+    if (node.id) {
+      idOrKeyToNodeKey.set(node.id, node.node_key);
+    }
+  }
+
+  const prereqs = new Map<string, Set<string>>();
+  const dependents = new Map<string, Set<string>>();
+  for (const key of nodeKeys) {
+    prereqs.set(key, new Set());
+    dependents.set(key, new Set());
+  }
+
+  let dependsOnEdgeCount = 0;
+  for (const edge of edges) {
+    if (edge.type === "DEPENDS_ON") {
+      dependsOnEdgeCount++;
+      const fromKey = idOrKeyToNodeKey.get(edge.from_node);
+      const toKey = idOrKeyToNodeKey.get(edge.to_node);
+      // Gracefully ignore unknown endpoints or self-edges
+      if (fromKey && toKey && fromKey !== toKey) {
+        prereqs.get(fromKey)!.add(toKey);
+        dependents.get(toKey)!.add(fromKey);
+      }
+    }
+  }
+
+  // Roots: nodes with 0 prerequisites
+  const roots: string[] = [];
+  for (const node of nodes) {
+    if (prereqs.get(node.node_key)!.size === 0) {
+      roots.push(node.node_key);
+    }
+  }
+
+  // multiPrereqNodes & maxPrereqs
+  let multiPrereqNodes = 0;
+  let maxPrereqs = 0;
+  for (const key of nodeKeys) {
+    const count = prereqs.get(key)!.size;
+    if (count >= 2) {
+      multiPrereqNodes++;
+    }
+    if (count > maxPrereqs) {
+      maxPrereqs = count;
+    }
+  }
+
+  // isStrictChain: every node has at most one prerequisite and at most one dependent
+  let isStrictChain = true;
+  for (const key of nodeKeys) {
+    if (prereqs.get(key)!.size > 1 || dependents.get(key)!.size > 1) {
+      isStrictChain = false;
+      break;
+    }
+  }
+
+  // Compute depth: longest distance from a root (iterative relaxation)
+  const depth = new Map<string, number>();
+  for (const key of nodeKeys) {
+    depth.set(key, 0);
+  }
+
+  let changed = true;
+  let iterations = 0;
+  const maxIterations = nodeCount;
+  while (changed && iterations < maxIterations) {
+    changed = false;
+    iterations++;
+    for (const key of nodeKeys) {
+      const pSet = prereqs.get(key)!;
+      if (pSet.size > 0) {
+        let maxPDepth = 0;
+        for (const p of pSet) {
+          const pd = depth.get(p) ?? 0;
+          if (pd > maxPDepth) {
+            maxPDepth = pd;
+          }
+        }
+        const newD = maxPDepth + 1;
+        if (newD > (depth.get(key) ?? 0)) {
+          depth.set(key, newD);
+          changed = true;
+        }
+      }
+    }
+  }
+
+  let maxDepth = 0;
+  const levelCounts = new Map<number, number>();
+  for (const d of depth.values()) {
+    if (d > maxDepth) {
+      maxDepth = d;
+    }
+    levelCounts.set(d, (levelCounts.get(d) ?? 0) + 1);
+  }
+
+  const longestPathLength = maxDepth + 1;
+  const maxParallelWidth = Math.max(0, ...levelCounts.values());
+
+  return {
+    nodeCount,
+    edgeCount,
+    dependsOnEdgeCount,
+    roots,
+    multiPrereqNodes,
+    maxPrereqs,
+    longestPathLength,
+    maxParallelWidth,
+    isStrictChain,
+  };
+}

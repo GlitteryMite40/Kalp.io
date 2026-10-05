@@ -20,6 +20,7 @@ import {
   checkGraphIntegrity,
   findUncoveredRequirements,
   sortNodesByPhase,
+  analyzeGraphShape,
 } from "../src/lib/schema";
 
 interface TestResult {
@@ -1408,6 +1409,86 @@ function runTests(): void {
     "requirementKeyOptionalForTypes matches case-insensitively",
     optionalTypesIssues.length === 0,
   );
+
+  // ---------------------------------------------------------------------------
+  // 12. Testing analyzeGraphShape
+  // ---------------------------------------------------------------------------
+  console.log("12. Testing analyzeGraphShape...");
+
+  // Strict chain
+  const chainNodes = [
+    { node_key: "01.1" },
+    { node_key: "02.1" },
+    { node_key: "03.1" },
+  ];
+  const chainEdges = [
+    { from_node: "02.1", to_node: "01.1", type: "DEPENDS_ON" },
+    { from_node: "03.1", to_node: "02.1", type: "DEPENDS_ON" },
+  ];
+  const chainShape = analyzeGraphShape(chainNodes, chainEdges);
+  assert(
+    "analyzeGraphShape on strict chain: isStrictChain is true",
+    chainShape.isStrictChain === true &&
+      chainShape.longestPathLength === 3 &&
+      chainShape.maxParallelWidth === 1 &&
+      chainShape.multiPrereqNodes === 0,
+  );
+
+  // Diamond: setup (A), B and C depend on setup, D depends on B and C
+  const diamondNodes = [
+    { node_key: "setup" },
+    { node_key: "B" },
+    { node_key: "C" },
+    { node_key: "D" },
+  ];
+  const diamondEdges = [
+    { from_node: "B", to_node: "setup", type: "DEPENDS_ON" },
+    { from_node: "C", to_node: "setup", type: "DEPENDS_ON" },
+    { from_node: "D", to_node: "B", type: "DEPENDS_ON" },
+    { from_node: "D", to_node: "C", type: "DEPENDS_ON" },
+  ];
+  const diamondShape = analyzeGraphShape(diamondNodes, diamondEdges);
+  assert(
+    "analyzeGraphShape on diamond: multiPrereqNodes 1, maxParallelWidth 2",
+    diamondShape.multiPrereqNodes === 1 &&
+      diamondShape.maxParallelWidth === 2 &&
+      diamondShape.isStrictChain === false &&
+      diamondShape.longestPathLength === 3,
+  );
+
+  // Empty edge list
+  const emptyEdgeNodes = [{ node_key: "01.1" }, { node_key: "01.2" }];
+  const emptyEdgesShape = analyzeGraphShape(emptyEdgeNodes, []);
+  assert(
+    "analyzeGraphShape on empty edge list: handles correctly without error",
+    emptyEdgesShape.edgeCount === 0 &&
+      emptyEdgesShape.dependsOnEdgeCount === 0 &&
+      emptyEdgesShape.roots.length === 2 &&
+      emptyEdgesShape.multiPrereqNodes === 0 &&
+      emptyEdgesShape.maxPrereqs === 0 &&
+      emptyEdgesShape.longestPathLength === 1 &&
+      emptyEdgesShape.maxParallelWidth === 2 &&
+      emptyEdgesShape.isStrictChain === true,
+  );
+
+  // Edge with an unknown endpoint (no throw)
+  try {
+    const unknownEndpointShape = analyzeGraphShape(
+      [{ node_key: "01.1" }],
+      [{ from_node: "01.1", to_node: "UNKNOWN_NODE", type: "DEPENDS_ON" }],
+    );
+    assert(
+      "analyzeGraphShape on edge with unknown endpoint does not throw and handles gracefully",
+      unknownEndpointShape.nodeCount === 1 &&
+        unknownEndpointShape.roots.includes("01.1") &&
+        unknownEndpointShape.multiPrereqNodes === 0,
+    );
+  } catch {
+    assert(
+      "analyzeGraphShape on edge with unknown endpoint threw an error",
+      false,
+    );
+  }
 
   // ---------------------------------------------------------------------------
   // SUMMARY REPORT

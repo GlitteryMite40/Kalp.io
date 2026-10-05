@@ -34,7 +34,9 @@ export const ArchitectureOutputSchema = z.preprocess(
   },
   z.object({
     stack: ArchitectureStackSchema,
-    assumptions: z.array(z.string()).default([]),
+    assumptions: z
+      .array(z.string())
+      .min(2, "At least 2 assumptions are required"),
     modules: z
       .array(ArchitectureModuleSchema)
       .min(1, "At least one module/component is required"),
