@@ -17,7 +17,8 @@
     "llm:check:offline": "tsx scripts/llm-check.ts --offline",
     "test:schema": "tsx scripts/test-schema.ts",
     "test:prompts": "tsx scripts/test-prompts.ts",
-    "test": "npm run test:schema && npm run test:prompts && npm run llm:check:offline",
+    "test:extract": "tsx scripts/test-extract.ts",
+    "test": "npm run test:schema && npm run test:prompts && npm run test:extract && npm run llm:check:offline",
     "prompt:smoke": "tsx --env-file=.env.local scripts/prompt-smoke.ts"
   },
   "dependencies": {
