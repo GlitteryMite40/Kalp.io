@@ -19,7 +19,8 @@
     "test:prompts": "tsx scripts/test-prompts.ts",
     "test:extract": "tsx scripts/test-extract.ts",
     "test:architecture": "tsx scripts/test-architecture.ts",
-    "test": "npm run test:schema && npm run test:prompts && npm run test:extract && npm run test:architecture && npm run llm:check:offline",
+    "test:decompose": "tsx scripts/test-decompose.ts",
+    "test": "npm run test:schema && npm run test:prompts && npm run test:extract && npm run test:architecture && npm run test:decompose && npm run llm:check:offline",
     "prompt:smoke": "tsx --env-file=.env.local scripts/prompt-smoke.ts"
   },
   "dependencies": {
