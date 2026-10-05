@@ -29,7 +29,8 @@
     "test:graph": "tsx --env-file=.env.local scripts/test-get-graph.ts",
     "test:node": "tsx --env-file=.env.local scripts/test-patch-node.ts",
     "test:run": "tsx --env-file=.env.local scripts/test-run-stage.ts",
-    "test": "npm run test:schema && npm run test:prompts && npm run test:extract && npm run test:architecture && npm run test:decompose && npm run test:validate && npm run test:criteria && npm run test:prompt && npm run test:save-plan && npm run test:session && npm run test:projects && npm run test:graph && npm run test:node && npm run test:run && npm run llm:check:offline",
+    "test:rate-limit": "tsx --env-file=.env.local scripts/test-rate-limit.ts",
+    "test": "npm run test:schema && npm run test:prompts && npm run test:extract && npm run test:architecture && npm run test:decompose && npm run test:validate && npm run test:criteria && npm run test:prompt && npm run test:save-plan && npm run test:session && npm run test:projects && npm run test:graph && npm run test:node && npm run test:run && npm run test:rate-limit && npm run llm:check:offline",
     "prompt:smoke": "tsx --env-file=.env.local scripts/prompt-smoke.ts"
   },
   "dependencies": {

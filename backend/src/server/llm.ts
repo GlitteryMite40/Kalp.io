@@ -6,6 +6,7 @@ import {
   type ApiModel,
   type ModelTier,
 } from "./llmModels";
+import { MAX_LLM_OUTPUT_TOKENS } from "./rateLimit";
 
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 const MODEL_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -678,7 +679,10 @@ async function callGeminiGenerate(
   error?: string;
 }> {
   const timeoutMs = opts?.timeoutMs ?? 60000;
-  const maxOutputTokens = opts?.maxOutputTokens ?? 8192;
+  const maxOutputTokens = Math.min(
+    opts?.maxOutputTokens ?? 8192,
+    MAX_LLM_OUTPUT_TOKENS,
+  );
   const backoffs = [500, 1500];
   let attempt = 0;
 
@@ -813,7 +817,10 @@ export async function generateJson<T>(
   const apiKey = getApiKey();
   const pinned = getPinnedModel();
   const excludedModels: string[] = [];
-  const maxOutputTokens = opts?.maxOutputTokens ?? 8192;
+  const maxOutputTokens = Math.min(
+    opts?.maxOutputTokens ?? 8192,
+    MAX_LLM_OUTPUT_TOKENS,
+  );
   const generateOpts = { ...opts, maxOutputTokens };
 
   let currentModel = await selectModel();

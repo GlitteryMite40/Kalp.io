@@ -27,6 +27,7 @@ import {
   updateProjectForOwner,
   type ProjectRecord,
 } from "@/server/session";
+import { STAGE_LLM_TOKEN_LIMITS } from "@/server/rateLimit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -120,7 +121,11 @@ async function runStage(
     }
     return extractRequirements(
       { idea: project.idea, project_id: project.id },
-      { project_id: project.id, timeoutMs: 240_000 },
+      {
+        project_id: project.id,
+        maxOutputTokens: STAGE_LLM_TOKEN_LIMITS.requirements,
+        timeoutMs: 240_000,
+      },
     );
   }
 
@@ -139,7 +144,10 @@ async function runStage(
         requirements,
         assumptions: requirementsOutput.assumptions,
       },
-      { timeoutMs: 240_000 },
+      {
+        maxOutputTokens: STAGE_LLM_TOKEN_LIMITS.architecture,
+        timeoutMs: 240_000,
+      },
     );
   }
 
@@ -154,7 +162,11 @@ async function runStage(
     }
     return decomposeToNodes(
       { requirements, architecture, project_id: project.id },
-      { project_id: project.id, timeoutMs: 240_000 },
+      {
+        project_id: project.id,
+        maxOutputTokens: STAGE_LLM_TOKEN_LIMITS.decomposition,
+        timeoutMs: 240_000,
+      },
     );
   }
 
@@ -162,7 +174,10 @@ async function runStage(
   if (deps.criteriaStage) {
     return deps.criteriaStage(graph);
   }
-  return generateCriteriaAndTests(graph, { timeoutMs: 240_000 });
+  return generateCriteriaAndTests(graph, {
+    maxOutputTokens: STAGE_LLM_TOKEN_LIMITS.criteria,
+    timeoutMs: 240_000,
+  });
 }
 
 export async function runNextProjectStage(

@@ -6,8 +6,11 @@ import {
   createProjectForOwner,
   findProjectsByOwner,
 } from "@/server/session";
-import { MAX_INPUT_CHARS } from "@/server/prompts/shared";
 import { jsonError } from "@/server/response";
+import {
+  checkAndIncrementPlanGenerationUsage,
+  PLAN_INPUT_CHAR_LIMIT,
+} from "@/server/rateLimit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -100,13 +103,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (trimmedIdea.length > MAX_INPUT_CHARS) {
+    if (trimmedIdea.length > PLAN_INPUT_CHAR_LIMIT) {
       return NextResponse.json(
         {
           success: false,
           error: {
             code: "INPUT_TOO_LONG",
-            message: `Project idea is too long (${trimmedIdea.length} characters). Maximum is ${MAX_INPUT_CHARS} characters.`,
+            message: `Project idea is too long (${trimmedIdea.length} characters). Maximum is ${PLAN_INPUT_CHAR_LIMIT} characters.`,
           },
         },
         { status: 400 },
@@ -117,7 +120,10 @@ export async function POST(request: NextRequest) {
     const rawName = typeof body.name === "string" ? body.name.trim() : "";
     const name = rawName || deriveProjectName(trimmedIdea);
 
-    // 5. Create project in database with status 'generating'
+    // 5. Count this plan generation against the owner's daily allowance.
+    await checkAndIncrementPlanGenerationUsage(ownerId);
+
+    // 6. Create project in database with status 'generating'
     // createProjectForOwner automatically enforces the session ownerId and discards any body.owner_id
     const project = await createProjectForOwner(
       {
@@ -128,7 +134,7 @@ export async function POST(request: NextRequest) {
       ownerId,
     );
 
-    // 6. Return ID and status 'generating' immediately
+    // 7. Return ID and status 'generating' immediately
     // Fast response without running the AI pipeline inside this request
     const responseBody = {
       success: true,
