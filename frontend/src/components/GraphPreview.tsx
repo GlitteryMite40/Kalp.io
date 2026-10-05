@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { BuildGraphNode } from "@/types";
+import { BuildGraphNode, NodeStatus, NODE_STATUS_LABELS } from "@/types";
 
 const INITIAL_NODES: BuildGraphNode[] = [
   {
@@ -55,7 +55,7 @@ const INITIAL_NODES: BuildGraphNode[] = [
       "Interactive visual DAG canvas with custom nodes, mini-map, and layout controls.",
     phase: "Phase 3: Interactive UI",
     type: "ui",
-    status: "planned",
+    status: "not_started",
     dependencies: ["node-3", "node-4"],
     estimatedHours: 6,
   },
@@ -66,28 +66,59 @@ const INITIAL_NODES: BuildGraphNode[] = [
       "Generates GitHub Issues, linear tickets, and PR scaffolds from graph steps.",
     phase: "Phase 3: Interactive UI",
     type: "integration",
-    status: "planned",
+    status: "not_started",
     dependencies: ["node-5"],
     estimatedHours: 4,
   },
 ];
 
-const STATUS_CONFIG = {
+const STATUS_CONFIG: Record<
+  NodeStatus,
+  {
+    label: string;
+    color: string;
+    dot: string;
+  }
+> = {
+  not_started: {
+    label: NODE_STATUS_LABELS.not_started,
+    color: "bg-zinc-500/10 text-zinc-400 border-zinc-500/30",
+    dot: "bg-zinc-500",
+  },
   ready: {
-    label: "Ready to Build",
-    color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+    label: NODE_STATUS_LABELS.ready,
+    color: "bg-cyan-500/10 text-cyan-400 border-cyan-500/30",
+    dot: "bg-cyan-400",
   },
   in_progress: {
-    label: "In Progress",
+    label: NODE_STATUS_LABELS.in_progress,
     color: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+    dot: "bg-amber-400",
   },
-  planned: {
-    label: "Waiting Dependencies",
-    color: "bg-zinc-500/10 text-zinc-400 border-zinc-500/30",
+  committed: {
+    label: NODE_STATUS_LABELS.committed,
+    color: "bg-violet-500/10 text-violet-400 border-violet-500/30",
+    dot: "bg-violet-400",
+  },
+  completed: {
+    label: NODE_STATUS_LABELS.completed,
+    color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+    dot: "bg-emerald-400",
   },
   blocked: {
-    label: "Blocked",
-    color: "bg-rose-500/10 text-rose-400 border-rose-500/30",
+    label: NODE_STATUS_LABELS.blocked,
+    color: "bg-zinc-500/10 text-zinc-500/70 border-zinc-500/20 opacity-70",
+    dot: "bg-zinc-600 opacity-60",
+  },
+  failed: {
+    label: NODE_STATUS_LABELS.failed,
+    color: "bg-red-500/10 text-red-400 border-red-500/30",
+    dot: "bg-red-400",
+  },
+  needs_review: {
+    label: NODE_STATUS_LABELS.needs_review,
+    color: "bg-orange-500/10 text-orange-400 border-orange-500/30",
+    dot: "bg-orange-400",
   },
 };
 
@@ -145,14 +176,22 @@ export default function GraphPreview() {
 
           <div className="flex items-center gap-3 text-xs text-zinc-400 bg-zinc-900/80 p-2 rounded-xl border border-zinc-800">
             <span className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-emerald-400" /> Complete
-              / Ready
+              <span
+                className={`h-2 w-2 rounded-full ${STATUS_CONFIG.ready.dot}`}
+              />{" "}
+              {NODE_STATUS_LABELS.ready}
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-amber-400" /> In Progress
+              <span
+                className={`h-2 w-2 rounded-full ${STATUS_CONFIG.in_progress.dot}`}
+              />{" "}
+              {NODE_STATUS_LABELS.in_progress}
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-zinc-500" /> Pending
+              <span
+                className={`h-2 w-2 rounded-full ${STATUS_CONFIG.not_started.dot}`}
+              />{" "}
+              {NODE_STATUS_LABELS.not_started}
             </span>
           </div>
         </div>
@@ -195,7 +234,7 @@ export default function GraphPreview() {
                           <span
                             className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${status.color}`}
                           >
-                            {status.label}
+                            {NODE_STATUS_LABELS[node.status]}
                           </span>
                         </div>
                         <h4 className="text-sm font-semibold text-white">
@@ -244,7 +283,7 @@ export default function GraphPreview() {
                           <span
                             className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${status.color}`}
                           >
-                            {status.label}
+                            {NODE_STATUS_LABELS[node.status]}
                           </span>
                         </div>
                         <h4 className="text-sm font-semibold text-white">
@@ -293,7 +332,7 @@ export default function GraphPreview() {
                           <span
                             className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${status.color}`}
                           >
-                            {status.label}
+                            {NODE_STATUS_LABELS[node.status]}
                           </span>
                         </div>
                         <h4 className="text-sm font-semibold text-white">

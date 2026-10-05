@@ -1,4 +1,23 @@
-export type NodeStatus = "planned" | "in_progress" | "ready" | "blocked";
+export type NodeStatus =
+  | "not_started"
+  | "ready"
+  | "in_progress"
+  | "committed"
+  | "completed"
+  | "blocked"
+  | "failed"
+  | "needs_review";
+
+export const NODE_STATUS_LABELS: Record<NodeStatus, string> = {
+  not_started: "Not Started",
+  ready: "Ready",
+  in_progress: "In Progress",
+  committed: "Committed",
+  completed: "Completed",
+  blocked: "Blocked",
+  failed: "Failed",
+  needs_review: "Needs Review",
+};
 
 export type NodeType =
   "core" | "feature" | "database" | "api" | "ui" | "integration";
