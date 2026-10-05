@@ -9,6 +9,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test:api": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-api-client.mjs",
+    "test:input": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-input-page.mjs",
+    "test": "npm run test:api && npm run test:input",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
