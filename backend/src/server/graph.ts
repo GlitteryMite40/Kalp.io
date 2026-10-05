@@ -1,6 +1,7 @@
 import type postgres from "postgres";
 import { getDb } from "@/lib/db";
 import { assertValidUuid } from "./session";
+import { isValidOwnerId } from "./sessionShared";
 import {
   type DbNodeStatus,
   type NodeStatus,
@@ -366,3 +367,86 @@ export async function findProjectGraphForOwner(
  * Alias for findProjectGraphForOwner
  */
 export const getProjectGraph = findProjectGraphForOwner;
+
+/**
+ * Finds a node by either UUID id or string node_key strictly verifying owner access through project.
+ */
+export async function findNodeByIdOrKeyForOwner(
+  idOrKey: string,
+  ownerId: string,
+  client?: postgres.Sql,
+): Promise<NodeRecord | null> {
+  const db = client ?? getDb();
+  const trimmed = idOrKey.trim();
+
+  if (isValidOwnerId(trimmed)) {
+    const rows = await db<NodeRecord[]>`
+      SELECT n.*
+      FROM nodes n
+      JOIN projects p ON n.project_id = p.id
+      WHERE n.id = ${trimmed} AND p.owner_id = ${ownerId}
+      LIMIT 1
+    `;
+    if (rows.length > 0) return rows[0];
+  }
+
+  // Also lookup by node_key for this owner
+  const rows = await db<NodeRecord[]>`
+    SELECT n.*
+    FROM nodes n
+    JOIN projects p ON n.project_id = p.id
+    WHERE n.node_key = ${trimmed} AND p.owner_id = ${ownerId}
+    LIMIT 1
+  `;
+  return rows.length > 0 ? rows[0] : null;
+}
+
+export interface NodeBlockedStateResult {
+  node: NodeRecord;
+  isBlocked: boolean;
+  blockedBy: string[];
+  dependencies: string[];
+}
+
+/**
+ * Evaluates whether a specific node is currently blocked by unsatisfied prerequisites.
+ */
+export async function getNodeBlockedState(
+  nodeIdOrKey: string,
+  ownerId: string,
+  client?: postgres.Sql,
+): Promise<NodeBlockedStateResult | null> {
+  const db = client ?? getDb();
+
+  const node = await findNodeByIdOrKeyForOwner(nodeIdOrKey, ownerId, db);
+  if (!node) {
+    return null;
+  }
+
+  const [projectNodes, projectEdges] = await Promise.all([
+    db<NodeRecord[]>`
+      SELECT id, project_id, node_key, phase, title, type, status,
+             requirement_id, files, explanation, acceptance, tests, prompt, created_at
+      FROM nodes
+      WHERE project_id = ${node.project_id}
+      ORDER BY phase ASC, node_key ASC
+    `,
+    db<EdgeRecord[]>`
+      SELECT id, project_id, from_node, to_node, type
+      FROM edges
+      WHERE project_id = ${node.project_id}
+    `,
+  ]);
+
+  const computedNodes = computeNodeStatuses(projectNodes, projectEdges);
+  const target = computedNodes.find(
+    (n) => n.id === node.id || n.node_key === node.node_key,
+  );
+
+  return {
+    node,
+    isBlocked: target ? target.is_blocked : false,
+    blockedBy: target ? target.blocked_by : [],
+    dependencies: target ? target.dependencies : [],
+  };
+}
