@@ -22,7 +22,8 @@
     "test:decompose": "tsx scripts/test-decompose.ts",
     "test:validate": "tsx scripts/test-validate.ts",
     "test:criteria": "tsx scripts/test-criteria.ts",
-    "test": "npm run test:schema && npm run test:prompts && npm run test:extract && npm run test:architecture && npm run test:decompose && npm run test:validate && npm run test:criteria && npm run llm:check:offline",
+    "test:prompt": "tsx scripts/test-prompt.ts",
+    "test": "npm run test:schema && npm run test:prompts && npm run test:extract && npm run test:architecture && npm run test:decompose && npm run test:validate && npm run test:criteria && npm run test:prompt && npm run llm:check:offline",
     "prompt:smoke": "tsx --env-file=.env.local scripts/prompt-smoke.ts"
   },
   "dependencies": {
