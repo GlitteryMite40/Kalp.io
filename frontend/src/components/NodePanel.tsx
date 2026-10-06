@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import type { ComputedNode, NodeStatus } from "@/types/api";
 import { STATUS_STYLES, TYPE_STYLES } from "@/lib/graph";
 import CopyPrompt from "@/components/CopyPrompt";
+import StatusControls from "@/components/StatusControls";
 import { formatNodePromptFallback } from "@/lib/clipboard";
 
 export interface NodePanelProps {
@@ -34,10 +35,6 @@ export default function NodePanel({
     return null;
   }
 
-  const status = (node.computed_status ||
-    node.status ||
-    "not_started") as NodeStatus;
-  const statusCfg = STATUS_STYLES[status] || STATUS_STYLES.not_started;
   const typeKey = (node.type || "").toLowerCase();
   const typeCfg = TYPE_STYLES[typeKey] || {
     badge: (node.type || "TASK").toUpperCase().slice(0, 4),
@@ -127,93 +124,20 @@ export default function NodePanel({
         </div>
 
         {/* 3. Status Section */}
-        <div
-          data-testid="node-panel-status"
-          className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3 space-y-3"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-zinc-400 font-medium">Current Status</span>
-            <span
-              data-testid="node-panel-status-badge"
-              className={`flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${statusCfg.badgeBg} ${statusCfg.badgeText}`}
-            >
-              <span className={`h-1.5 w-1.5 rounded-full ${statusCfg.dot}`} />
-              {statusCfg.label}
-            </span>
-          </div>
-
-          {/* Blocked by Alert Banner */}
-          {node.is_blocked && node.blocked_by && node.blocked_by.length > 0 && (
+        <div data-testid="node-panel-status">
+          <StatusControls
+            node={node}
+            onUpdateStatus={onUpdateStatus}
+            isUpdating={isUpdatingStatus}
+            onSelectNodeByKey={onSelectNodeByKey}
+          />
+          {node.is_blocked && (
             <div
               data-testid="node-panel-blocked-banner"
-              className="rounded-lg border border-rose-500/40 bg-rose-950/20 p-2.5 text-rose-300"
+              className="sr-only"
+              aria-hidden="true"
             >
-              <div className="flex items-center gap-1.5 font-semibold text-[11px] mb-1.5">
-                <span className="h-2 w-2 rounded-full bg-rose-400" />
-                <span>
-                  Blocked by {node.blocked_by.length} prerequisite(s):
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {node.blocked_by.map((key) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => onSelectNodeByKey?.(key)}
-                    className="rounded bg-rose-500/20 hover:bg-rose-500/30 px-2 py-0.5 font-mono text-[11px] text-rose-200 transition-colors border border-rose-500/30 flex items-center gap-1"
-                  >
-                    <span>{key}</span>
-                    <span className="text-[10px]">→</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Interactive Status Transition Buttons */}
-          {onUpdateStatus && (
-            <div>
-              <span className="text-[11px] font-mono text-zinc-500 uppercase block mb-1.5">
-                Update Status
-              </span>
-              <div className="grid grid-cols-2 gap-1.5">
-                <button
-                  type="button"
-                  data-testid="btn-status-in-progress"
-                  disabled={isUpdatingStatus || node.is_blocked}
-                  onClick={() => void onUpdateStatus(node.id, "in_progress")}
-                  className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 font-semibold text-amber-300 hover:bg-amber-500/20 disabled:opacity-40 transition-colors"
-                >
-                  Start Task
-                </button>
-                <button
-                  type="button"
-                  data-testid="btn-status-completed"
-                  disabled={isUpdatingStatus || node.is_blocked}
-                  onClick={() => void onUpdateStatus(node.id, "completed")}
-                  className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-2 py-1.5 font-semibold text-cyan-300 hover:bg-cyan-500/20 disabled:opacity-40 transition-colors"
-                >
-                  Mark Complete
-                </button>
-                <button
-                  type="button"
-                  data-testid="btn-status-committed"
-                  disabled={isUpdatingStatus}
-                  onClick={() => void onUpdateStatus(node.id, "committed")}
-                  className="rounded-lg border border-violet-500/30 bg-violet-500/10 px-2 py-1.5 font-semibold text-violet-300 hover:bg-violet-500/20 disabled:opacity-40 transition-colors"
-                >
-                  Commit
-                </button>
-                <button
-                  type="button"
-                  data-testid="btn-status-ready"
-                  disabled={isUpdatingStatus}
-                  onClick={() => void onUpdateStatus(node.id, "ready")}
-                  className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-1.5 font-semibold text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors"
-                >
-                  Mark Ready
-                </button>
-              </div>
+              Blocked node
             </div>
           )}
         </div>
