@@ -5,6 +5,7 @@ import type { ComputedNode, NodeStatus } from "@/types/api";
 import { STATUS_STYLES, TYPE_STYLES } from "@/lib/graph";
 import CopyPrompt from "@/components/CopyPrompt";
 import StatusControls from "@/components/StatusControls";
+import ExportMenu from "@/components/ExportMenu";
 import { formatNodePromptFallback } from "@/lib/clipboard";
 
 export interface NodePanelProps {
@@ -356,6 +357,27 @@ export default function NodePanel({
             title={node.title}
           />
         </div>
+
+        {/* 10. Plan Export */}
+        {allNodes.length > 0 && (
+          <div
+            data-testid="node-panel-export"
+            className="rounded-xl border border-zinc-800/80 bg-zinc-950/40 p-3 flex items-center justify-between"
+          >
+            <div>
+              <span className="font-mono text-zinc-300 text-[11px] font-semibold block">
+                Export Plan
+              </span>
+              <span className="text-[10px] text-zinc-500">
+                JSON & Markdown checklist
+              </span>
+            </div>
+            <ExportMenu
+              data={{ nodes: allNodes }}
+              size="sm"
+            />
+          </div>
+        )}
       </div>
     </aside>
   );

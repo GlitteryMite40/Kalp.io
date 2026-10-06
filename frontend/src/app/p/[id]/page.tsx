@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import Graph from "@/components/Graph";
 import NodePanel from "@/components/NodePanel";
+import ExportMenu from "@/components/ExportMenu";
 import {
   api,
   ApiClientError,
@@ -235,6 +236,17 @@ export default function ProjectGraphPage({ params }: PageProps) {
             >
               {isRunningStage ? "Running..." : "Run Next Stage"}
             </button>
+          )}
+
+          {graphData && (
+            <ExportMenu
+              data={{
+                project: graphData.project,
+                nodes: graphData.nodes,
+                edges: graphData.edges,
+                requirements: graphData.requirements,
+              }}
+            />
           )}
 
           <button
