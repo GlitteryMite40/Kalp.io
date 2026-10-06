@@ -16,7 +16,9 @@
     "test:status": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-status-controls.mjs",
     "test:projects-list": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-projects-list.mjs",
     "test:export": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-export-plan.mjs",
-    "test": "npm run test:api && npm run test:input && npm run test:graph && npm run test:panel && npm run test:prompt && npm run test:status && npm run test:projects-list && npm run test:export",
+    "test:unit": "vitest run",
+    "test:e2e": "playwright test",
+    "test": "vitest run && npm run test:api && npm run test:input && npm run test:graph && npm run test:panel && npm run test:prompt && npm run test:status && npm run test:projects-list && npm run test:export",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
@@ -27,6 +29,7 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -35,6 +38,8 @@
     "eslint-config-next": "16.3.8",
     "prettier": "^3.9.9",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vite": "^8.3.3",
+    "vitest": "^5.0.3"
   }
 }
