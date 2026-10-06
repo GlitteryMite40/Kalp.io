@@ -12,7 +12,8 @@
     "test:input": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-input-page.mjs",
     "test:graph": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-graph-render.mjs",
     "test:panel": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-node-panel.mjs",
-    "test": "npm run test:api && npm run test:input && npm run test:graph && npm run test:panel",
+    "test:prompt": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-copy-prompt.mjs",
+    "test": "npm run test:api && npm run test:input && npm run test:graph && npm run test:panel && npm run test:prompt",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

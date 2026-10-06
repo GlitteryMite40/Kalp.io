@@ -3,6 +3,8 @@
 import React, { useState } from "react";
 import type { ComputedNode, NodeStatus } from "@/types/api";
 import { STATUS_STYLES, TYPE_STYLES } from "@/lib/graph";
+import CopyPrompt from "@/components/CopyPrompt";
+import { formatNodePromptFallback } from "@/lib/clipboard";
 
 export interface NodePanelProps {
   node: ComputedNode | null;
@@ -422,17 +424,14 @@ export default function NodePanel({
           )}
         </div>
 
-        {/* 9. AI Prompt (Optional) */}
-        {node.prompt && (
-          <div data-testid="node-panel-prompt">
-            <span className="font-mono text-zinc-500 text-[10px] uppercase font-bold block mb-1.5">
-              Generation Prompt
-            </span>
-            <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded-lg border border-zinc-800 bg-zinc-950 p-2.5 font-mono text-[10px] text-zinc-400 leading-relaxed">
-              {node.prompt}
-            </pre>
-          </div>
-        )}
+        {/* 9. AI Task Prompt & Clipboard Copy */}
+        <div data-testid="node-panel-prompt">
+          <CopyPrompt
+            prompt={node.prompt || formatNodePromptFallback(node)}
+            nodeKey={node.node_key}
+            title={node.title}
+          />
+        </div>
       </div>
     </aside>
   );
