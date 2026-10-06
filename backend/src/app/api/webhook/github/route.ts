@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processWebhook } from "@/server/webhook";
 import { findProjectsByRepoFullName } from "@/server/repo";
+import { applyCommit } from "@/server/applyCommit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,6 +11,7 @@ export const dynamic = "force-dynamic";
  *
  * Incoming webhook endpoint for GitHub events (ping, push).
  * Verifies payload HMAC against project-specific secrets and processes commit metadata.
+ * Stores commits and marks matched nodes as 'committed' (Task 06.4).
  *
  * Constraints:
  * - Read raw body with await request.text() BEFORE any parsing.
@@ -23,6 +25,9 @@ export async function POST(request: NextRequest) {
       rawBody,
       headers: request.headers,
       findProjectsByRepoFullName,
+      onCommit: async (commitInput) => {
+        await applyCommit(commitInput);
+      },
     });
 
     return NextResponse.json(result.body, { status: result.status });

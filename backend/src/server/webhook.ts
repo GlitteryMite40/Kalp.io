@@ -15,6 +15,14 @@ export interface ProcessWebhookOptions {
   findProjectsByRepoFullName: (
     fullNameLower: string,
   ) => Promise<CandidateProject[]> | CandidateProject[];
+  onCommit?: (input: {
+    projectId: string;
+    sha: string;
+    message?: string | null;
+    files?: string[];
+    nodeKeys?: string[];
+    committedAt?: string | null;
+  }) => Promise<unknown> | unknown;
 }
 
 export interface ProcessWebhookResult {
@@ -124,6 +132,7 @@ export async function processWebhook({
   rawBody,
   headers,
   findProjectsByRepoFullName,
+  onCommit,
 }: ProcessWebhookOptions): Promise<ProcessWebhookResult> {
   // 1. Length check: max 1,000,000 chars
   if (typeof rawBody !== "string" || rawBody.length > 1_000_000) {
@@ -239,6 +248,30 @@ export async function processWebhook({
         files: [...added, ...modified, ...removed],
       };
     });
+
+    if (typeof onCommit === "function") {
+      for (const project of verifiedProjects) {
+        for (let i = 0; i < commits.length; i++) {
+          const rawCommit = (
+            commits[i] && typeof commits[i] === "object" ? commits[i] : {}
+          ) as Record<string, unknown>;
+          const parsed = parsedCommits[i];
+          const committedAt =
+            typeof rawCommit.timestamp === "string"
+              ? rawCommit.timestamp
+              : null;
+          await onCommit({
+            projectId: project.id,
+            sha: parsed.sha,
+            message:
+              typeof rawCommit.message === "string" ? rawCommit.message : null,
+            files: parsed.files,
+            nodeKeys: parsed.node_keys,
+            committedAt,
+          });
+        }
+      }
+    }
 
     return {
       status: 200,
