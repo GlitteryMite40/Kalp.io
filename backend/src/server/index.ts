@@ -13,3 +13,4 @@ export * from "./repo";
 export * from "./commitParser";
 export * from "./webhook";
 export * from "./applyCommit";
+export * from "./fileMatch";

@@ -5,12 +5,17 @@
  * Idempotent: Handles GitHub redeliveries and duplicate pushes cleanly via ON CONFLICT.
  */
 
-import type postgres from "postgres";
 import { getDb } from "@/lib/db";
 import { BadRequestError, NotFoundError } from "@/lib/errors";
 import { assertValidUuid } from "./session";
 import { parseNodeKeys } from "./commitParser";
 import type { NodeRecord } from "./session";
+import {
+  matchFilesToNodes,
+  storeCommitSuggestions,
+  type FileMatchSuggestion,
+  type DbClient,
+} from "./fileMatch";
 
 export interface ApplyCommitInput {
   projectId: string;
@@ -26,6 +31,8 @@ export interface CommitRecord {
   id: string;
   project_id: string;
   node_id: string | null;
+  suggested_node_id?: string | null;
+  confidence?: number | null;
   sha: string;
   message: string | null;
   files: string[];
@@ -43,6 +50,10 @@ export interface ApplyCommitResult {
   matchedNodeKeys: string[];
   nodeUpdated: boolean;
   duplicate: boolean;
+  suggestedNodeId?: string | null;
+  suggestedNodeKey?: string | null;
+  confidence?: number | null;
+  suggestions?: FileMatchSuggestion[];
 }
 
 /**
@@ -60,7 +71,7 @@ export interface ApplyCommitResult {
  */
 export async function applyCommit(
   input: ApplyCommitInput,
-  client?: postgres.Sql,
+  client?: DbClient,
 ): Promise<ApplyCommitResult> {
   const { projectId, sha, message, files = [], committedAt } = input;
 
@@ -85,8 +96,8 @@ export async function applyCommit(
 
   const db = client ?? getDb();
 
-  // Run in transaction to guarantee atomicity between node update and commit insert
-  return await db.begin(async (tx) => {
+  // Run in transaction to guarantee atomicity between node update, commit insert, and suggestions
+  const runTransaction = async (tx: DbClient): Promise<ApplyCommitResult> => {
     // Check project exists
     const projRows = await tx<Array<{ id: string }>>`
       SELECT id FROM projects WHERE id = ${projectId}
@@ -140,7 +151,27 @@ export async function applyCommit(
       }
     }
 
-    // 4. Parse committed_at timestamp
+    // 4. File fallback matching: if no node ID matched and files changed
+    let suggestions: FileMatchSuggestion[] = [];
+    let suggestedNodeId: string | null = null;
+    let suggestedNodeKey: string | null = null;
+    let confidence: number | null = null;
+
+    if (!matchedNodeId && files.length > 0) {
+      suggestions = await matchFilesToNodes({
+        projectId,
+        changedFiles: files,
+        client: tx,
+      });
+
+      if (suggestions.length > 0) {
+        suggestedNodeId = suggestions[0].nodeId;
+        suggestedNodeKey = suggestions[0].nodeKey;
+        confidence = suggestions[0].confidence;
+      }
+    }
+
+    // 5. Parse committed_at timestamp
     let parsedCommittedAt: Date | null = null;
     if (committedAt) {
       const d = new Date(committedAt);
@@ -154,13 +185,17 @@ export async function applyCommit(
         ? input.matchedBy
         : matchedNodeId
           ? "message"
-          : null;
+          : suggestions.length > 0
+            ? "files"
+            : null;
 
-    // 5. Store the commit in `commits` table (idempotent with ON CONFLICT)
+    // 6. Store the commit in `commits` table (idempotent with ON CONFLICT)
     const [inserted] = await tx<Array<{ id: string }>>`
       INSERT INTO commits (
         project_id,
         node_id,
+        suggested_node_id,
+        confidence,
         sha,
         message,
         files,
@@ -169,6 +204,8 @@ export async function applyCommit(
       ) VALUES (
         ${projectId},
         ${matchedNodeId},
+        ${suggestedNodeId},
+        ${confidence},
         ${cleanSha},
         ${cleanMessage},
         ${files},
@@ -177,6 +214,8 @@ export async function applyCommit(
       )
       ON CONFLICT (project_id, sha) DO UPDATE
       SET node_id = COALESCE(EXCLUDED.node_id, commits.node_id),
+          suggested_node_id = COALESCE(EXCLUDED.suggested_node_id, commits.suggested_node_id),
+          confidence = COALESCE(EXCLUDED.confidence, commits.confidence),
           message = COALESCE(EXCLUDED.message, commits.message),
           files = CASE
             WHEN EXCLUDED.files IS NOT NULL AND array_length(EXCLUDED.files, 1) > 0 THEN EXCLUDED.files
@@ -187,6 +226,11 @@ export async function applyCommit(
       RETURNING id
     `;
 
+    // 7. Store detailed commit suggestions (handles multiple matches)
+    if (suggestions.length > 0) {
+      await storeCommitSuggestions(inserted.id, suggestions, tx);
+    }
+
     return {
       commitId: inserted.id,
       projectId,
@@ -196,8 +240,18 @@ export async function applyCommit(
       matchedNodeKeys: nodeKeys,
       nodeUpdated,
       duplicate: isDuplicate,
+      suggestedNodeId,
+      suggestedNodeKey,
+      confidence,
+      suggestions,
     };
-  });
+  };
+
+  if ("begin" in db && typeof db.begin === "function") {
+    return await db.begin(async (tx) => runTransaction(tx));
+  } else {
+    return await runTransaction(db);
+  }
 }
 
 /**
@@ -206,7 +260,7 @@ export async function applyCommit(
 export async function applyCommits(
   projectId: string,
   commits: ApplyCommitInput[],
-  client?: postgres.Sql,
+  client?: DbClient,
 ): Promise<ApplyCommitResult[]> {
   const results: ApplyCommitResult[] = [];
   for (const c of commits) {
