@@ -82,45 +82,43 @@ async function run() {
     );
     cleanupProjectIds.push(projectA.id);
 
-    await savePlan(
-      {
-        projectId: projectA.id,
-        requirements: [
-          {
-            key: "REQ-01",
-            title: "Database layer",
-            description: "Store persistent records",
-          },
-        ],
-        nodes: [
-          {
-            node_key: "01.1",
-            phase: "01",
-            title: "Database migration",
-            requirement_key: "REQ-01",
-            files: ["schema.sql"],
-            acceptance: ["Tables created"],
-            tests: ["db:smoke"],
-          },
-          {
-            node_key: "02.1",
-            phase: "02",
-            title: "API endpoint",
-            requirement_key: "REQ-01",
-            files: ["api.ts"],
-            acceptance: ["Endpoint returns 200"],
-            tests: ["api:test"],
-          },
-        ],
-        edges: [
-          {
-            from_node: "02.1",
-            to_node: "01.1",
-            type: "DEPENDS_ON",
-          },
-        ],
-      },
-    );
+    await savePlan({
+      projectId: projectA.id,
+      requirements: [
+        {
+          key: "REQ-01",
+          title: "Database layer",
+          description: "Store persistent records",
+        },
+      ],
+      nodes: [
+        {
+          node_key: "01.1",
+          phase: "01",
+          title: "Database migration",
+          requirement_key: "REQ-01",
+          files: ["schema.sql"],
+          acceptance: ["Tables created"],
+          tests: ["db:smoke"],
+        },
+        {
+          node_key: "02.1",
+          phase: "02",
+          title: "API endpoint",
+          requirement_key: "REQ-01",
+          files: ["api.ts"],
+          acceptance: ["Endpoint returns 200"],
+          tests: ["api:test"],
+        },
+      ],
+      edges: [
+        {
+          from_node: "02.1",
+          to_node: "01.1",
+          type: "DEPENDS_ON",
+        },
+      ],
+    });
 
     // Verify Project A has rows in database
     const [nodeCountBefore] = await db<{ count: string }[]>`

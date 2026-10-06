@@ -1,4 +1,5 @@
 import type {
+  ConnectRepoInput,
   CreateProjectInput,
   CreateProjectResponse,
   HealthResponse,
@@ -7,6 +8,7 @@ import type {
   NodeDetailResponse,
   PingResponse,
   ProjectGraphResponse,
+  ProjectRepoInfo,
   RunProjectResponse,
   UpdateNodeStatusInput,
   UpdateNodeStatusResponse,
@@ -268,6 +270,50 @@ export async function getLlmStatus(
   });
 }
 
+export async function getProjectRepo(
+  projectId: string,
+  options?: ApiRequestOptions,
+): Promise<ProjectRepoInfo> {
+  const res = await apiRequest<{
+    success: true;
+    data: ProjectRepoInfo;
+  }>(`/api/projects/${encodeURIComponent(projectId)}/repo`, {
+    method: "GET",
+    ...options,
+  });
+  return res.data;
+}
+
+export async function connectProjectRepo(
+  projectId: string,
+  input: ConnectRepoInput,
+  options?: ApiRequestOptions,
+): Promise<ProjectRepoInfo> {
+  const res = await apiRequest<{
+    success: true;
+    data: ProjectRepoInfo;
+  }>(`/api/projects/${encodeURIComponent(projectId)}/repo`, {
+    method: "POST",
+    body: input,
+    ...options,
+  });
+  return res.data;
+}
+
+export async function disconnectProjectRepo(
+  projectId: string,
+  options?: ApiRequestOptions,
+): Promise<{ disconnected: boolean }> {
+  const res = await apiRequest<{
+    success: true;
+    data: { disconnected: boolean };
+  }>(`/api/projects/${encodeURIComponent(projectId)}/repo`, {
+    method: "DELETE",
+    ...options,
+  });
+  return res.data;
+}
+
 export async function getHealth(options?: ApiRequestOptions) {
   return apiRequest<HealthResponse>("/api/health", {
     method: "GET",
@@ -291,6 +337,9 @@ export const api = {
   runNextProjectStage,
   getNode,
   updateNodeStatus,
+  getProjectRepo,
+  connectProjectRepo,
+  disconnectProjectRepo,
   getLlmStatus,
   getHealth,
   pingBackend,

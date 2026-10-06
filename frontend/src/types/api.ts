@@ -196,3 +196,28 @@ export interface PingResponse {
   timestamp: string;
   service: "kalp-io-backend";
 }
+
+export interface ConnectRepoInput {
+  repo_url: string;
+}
+
+export interface ProjectRepoInfo {
+  repo_url: string | null;
+  repo_full_name?: string | null;
+  repo_connected_at?: string | null;
+  public_check?: "public" | "skipped";
+  webhook_path?: string;
+  webhook_secret?: string;
+}
+
+export interface ConnectRepoResponse {
+  success: true;
+  data: ProjectRepoInfo;
+}
+
+export interface DisconnectRepoResponse {
+  success: true;
+  data: {
+    disconnected: boolean;
+  };
+}

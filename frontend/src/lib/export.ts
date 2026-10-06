@@ -156,8 +156,11 @@ export function resolveNodeDependencies(
 
   for (const edge of edges) {
     const isTarget =
-      ("to_node_key" in edge && edge.to_node_key && edge.to_node_key === currentKey) ||
-      (edge.to_node && (edge.to_node === currentKey || edge.to_node === currentId));
+      ("to_node_key" in edge &&
+        edge.to_node_key &&
+        edge.to_node_key === currentKey) ||
+      (edge.to_node &&
+        (edge.to_node === currentKey || edge.to_node === currentId));
 
     if (isTarget) {
       let sourceKey = "from_node_key" in edge ? edge.from_node_key : undefined;
@@ -174,7 +177,9 @@ export function resolveNodeDependencies(
     }
   }
 
-  return Array.from(deps).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  return Array.from(deps).sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true }),
+  );
 }
 
 /**
@@ -189,7 +194,10 @@ function sanitizeSingleLine(text: string | null | undefined): string {
 /**
  * Sanitizes a project name for use in file downloads across Windows, macOS, and Linux.
  */
-export function sanitizeFilename(name: string | null | undefined, fallback = "kalp-project-plan"): string {
+export function sanitizeFilename(
+  name: string | null | undefined,
+  fallback = "kalp-project-plan",
+): string {
   if (!name || typeof name !== "string") {
     return fallback;
   }
@@ -209,7 +217,10 @@ export function sanitizeFilename(name: string | null | undefined, fallback = "ka
 /**
  * Computes default filename with current date stamp.
  */
-export function getDefaultFilename(input: ExportPlanInput, ext: "json" | "md"): string {
+export function getDefaultFilename(
+  input: ExportPlanInput,
+  ext: "json" | "md",
+): string {
   const base = sanitizeFilename(input.project?.name || "project-plan");
   const dateStr = new Date().toISOString().slice(0, 10);
   return `${base}-${dateStr}.${ext}`;
@@ -249,16 +260,21 @@ export function generatePlanJson(input: ExportPlanInput): string {
       status,
       dependencies: resolvedDeps,
       files: Array.isArray(node.files) ? node.files.map(String) : [],
-      acceptance: Array.isArray(node.acceptance) ? node.acceptance.map(String) : [],
+      acceptance: Array.isArray(node.acceptance)
+        ? node.acceptance.map(String)
+        : [],
       tests: Array.isArray(node.tests) ? node.tests.map(String) : [],
       explanation: node.explanation ? String(node.explanation) : null,
       prompt: node.prompt ? String(node.prompt) : null,
-      requirement_key: node.requirement_key ? String(node.requirement_key) : null,
+      requirement_key: node.requirement_key
+        ? String(node.requirement_key)
+        : null,
     };
   });
 
   const exportedEdges: ExportedPlanJsonEdge[] = edges.map((e) => {
-    const fromKey = ("from_node_key" in e && e.from_node_key) || e.from_node || "";
+    const fromKey =
+      ("from_node_key" in e && e.from_node_key) || e.from_node || "";
     const toKey = ("to_node_key" in e && e.to_node_key) || e.to_node || "";
     return {
       from: String(fromKey),
@@ -308,7 +324,8 @@ export function generatePlanJson(input: ExportPlanInput): string {
 export function generatePlanMarkdown(input: ExportPlanInput): string {
   const nodes = Array.isArray(input.nodes) ? input.nodes : [];
   const edges = Array.isArray(input.edges) ? input.edges : [];
-  const projectName = sanitizeSingleLine(input.project?.name) || "Untitled Project";
+  const projectName =
+    sanitizeSingleLine(input.project?.name) || "Untitled Project";
   const idea = sanitizeSingleLine(input.project?.idea);
 
   let completedCount = 0;
@@ -320,7 +337,8 @@ export function generatePlanMarkdown(input: ExportPlanInput): string {
   }
 
   const totalNodes = nodes.length;
-  const pct = totalNodes > 0 ? Math.round((completedCount / totalNodes) * 100) : 0;
+  const pct =
+    totalNodes > 0 ? Math.round((completedCount / totalNodes) * 100) : 0;
   const exportTimestamp = input.exportedAt || new Date().toISOString();
 
   // Group nodes by phase
@@ -365,23 +383,30 @@ export function generatePlanMarkdown(input: ExportPlanInput): string {
       const phaseNodes = phaseMap.get(phase) || [];
       // Sort nodes within phase by node_key naturally
       phaseNodes.sort((a, b) =>
-        String(a.node_key).localeCompare(String(b.node_key), undefined, { numeric: true }),
+        String(a.node_key).localeCompare(String(b.node_key), undefined, {
+          numeric: true,
+        }),
       );
 
       const isPhaseNumber = /^\d+$/.test(phase);
       const phaseHeading = isPhaseNumber ? `Phase ${phase}` : phase;
-      lines.push(`## ${phaseHeading} (${phaseNodes.length} task${phaseNodes.length === 1 ? "" : "s"})`);
+      lines.push(
+        `## ${phaseHeading} (${phaseNodes.length} task${phaseNodes.length === 1 ? "" : "s"})`,
+      );
       lines.push("");
 
       for (const node of phaseNodes) {
-        const isDone = node.status === "completed" || node.status === "committed";
+        const isDone =
+          node.status === "completed" || node.status === "committed";
         const checkMark = isDone ? "[x]" : "[ ]";
         const titleLine = sanitizeSingleLine(node.title) || "Untitled Task";
         const statusLabel = node.status || "not_started";
         const deps = resolveNodeDependencies(node, edges, nodes);
 
         // Checklist header item
-        lines.push(`- ${checkMark} **[${node.node_key}] ${titleLine}** \`(${statusLabel})\``);
+        lines.push(
+          `- ${checkMark} **[${node.node_key}] ${titleLine}** \`(${statusLabel})\``,
+        );
 
         // Dependencies specification (ACCEPTANCE CRITERIA: files contain every node and its dependencies)
         if (deps.length > 0) {
@@ -394,20 +419,25 @@ export function generatePlanMarkdown(input: ExportPlanInput): string {
         const metaParts: string[] = [];
         if (node.phase) metaParts.push(`**Phase**: ${node.phase}`);
         if (node.type) metaParts.push(`**Type**: ${node.type}`);
-        if (node.requirement_key) metaParts.push(`**Requirement**: ${node.requirement_key}`);
+        if (node.requirement_key)
+          metaParts.push(`**Requirement**: ${node.requirement_key}`);
         if (metaParts.length > 0) {
           lines.push(`  - ${metaParts.join(" | ")}`);
         }
 
         // Files
         if (Array.isArray(node.files) && node.files.length > 0) {
-          const filesFormatted = node.files.map((f) => `\`${sanitizeSingleLine(f)}\``).join(", ");
+          const filesFormatted = node.files
+            .map((f) => `\`${sanitizeSingleLine(f)}\``)
+            .join(", ");
           lines.push(`  - **Files**: ${filesFormatted}`);
         }
 
         // Purpose / Explanation
         if (node.explanation) {
-          lines.push(`  - **Purpose**: ${sanitizeSingleLine(node.explanation)}`);
+          lines.push(
+            `  - **Purpose**: ${sanitizeSingleLine(node.explanation)}`,
+          );
         }
 
         // Acceptance Criteria
@@ -434,7 +464,9 @@ export function generatePlanMarkdown(input: ExportPlanInput): string {
   // Footer / Attribution
   lines.push("---");
   lines.push("");
-  lines.push("_Generated in the browser by [Kalp.io](https://kalp.io) - Dependency-aware build graph._");
+  lines.push(
+    "_Generated in the browser by [Kalp.io](https://kalp.io) - Dependency-aware build graph._",
+  );
   lines.push("");
 
   return lines.join("\n");
@@ -525,7 +557,12 @@ export function downloadPlanMarkdown(
 ): string {
   const markdown = generatePlanMarkdown(input);
   const targetFilename = filename || getDefaultFilename(input, "md");
-  downloadFile(markdown, targetFilename, "text/markdown;charset=utf-8", options);
+  downloadFile(
+    markdown,
+    targetFilename,
+    "text/markdown;charset=utf-8",
+    options,
+  );
   return markdown;
 }
 

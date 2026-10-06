@@ -94,10 +94,16 @@ async function run() {
         details?: { reset_at?: string };
       };
       check("Over limit throws HTTP 429 error", err.statusCode === 429, err);
-      check("Over limit error code is readable", err.code === "RATE_LIMIT_EXCEEDED", err);
+      check(
+        "Over limit error code is readable",
+        err.code === "RATE_LIMIT_EXCEEDED",
+        err,
+      );
       check(
         "Over limit message says when it resets",
-        Boolean(err.message?.includes("Try again after") && err.details?.reset_at),
+        Boolean(
+          err.message?.includes("Try again after") && err.details?.reset_at,
+        ),
         err,
       );
     }
@@ -122,7 +128,11 @@ async function run() {
       SELECT count FROM usage
       WHERE owner_id = ${ownerId} AND day = ${tomorrowDay}
     `;
-    check("Next-day usage row is separate", nextDayUsage?.count === 1, nextDayUsage);
+    check(
+      "Next-day usage row is separate",
+      nextDayUsage?.count === 1,
+      nextDayUsage,
+    );
 
     console.log("\n--- Part 3: POST /api/projects 429 response ---");
     const routeDay = usageDay(new Date());
@@ -158,11 +168,22 @@ async function run() {
       cleanupProjectIds.push(body.id);
     }
 
-    check("ACCEPTANCE CRITERIA: over-limit request gets HTTP 429", res.status === 429, body);
-    check("429 response has RATE_LIMIT_EXCEEDED code", body.error?.code === "RATE_LIMIT_EXCEEDED", body);
+    check(
+      "ACCEPTANCE CRITERIA: over-limit request gets HTTP 429",
+      res.status === 429,
+      body,
+    );
+    check(
+      "429 response has RATE_LIMIT_EXCEEDED code",
+      body.error?.code === "RATE_LIMIT_EXCEEDED",
+      body,
+    );
     check(
       "429 response message is readable and says when it resets",
-      Boolean(body.error?.message.includes("Try again after") && body.error.details?.reset_at),
+      Boolean(
+        body.error?.message.includes("Try again after") &&
+        body.error.details?.reset_at,
+      ),
       body,
     );
 
@@ -183,7 +204,9 @@ async function run() {
     for (const id of cleanupOwnerIds) {
       await db`DELETE FROM usage WHERE owner_id = ${id}`;
     }
-    console.log(`\nCleaned up usage rows for ${cleanupOwnerIds.length} owner(s).`);
+    console.log(
+      `\nCleaned up usage rows for ${cleanupOwnerIds.length} owner(s).`,
+    );
   }
 
   console.log("\n==========================================");

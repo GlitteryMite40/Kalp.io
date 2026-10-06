@@ -15,7 +15,6 @@ import path from "node:path";
 import {
   layoutGraphByPhase,
   STATUS_STYLES,
-  TYPE_STYLES,
   extractPhaseIndex,
 } from "../src/lib/graph.ts";
 

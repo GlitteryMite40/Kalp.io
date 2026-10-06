@@ -11,7 +11,10 @@
 import fs from "node:fs";
 import crypto from "node:crypto";
 import { NextRequest } from "next/server";
-import { POST, runNextProjectStage } from "../src/app/api/projects/[id]/run/route";
+import {
+  POST,
+  runNextProjectStage,
+} from "../src/app/api/projects/[id]/run/route";
 import {
   OWNER_COOKIE_NAME,
   OWNER_HEADER_NAME,
@@ -74,7 +77,8 @@ async function run() {
         id: crypto.randomUUID(),
         key: "REQ-1",
         title: "Create authenticated projects",
-        description: "Users can create a project under their anonymous session.",
+        description:
+          "Users can create a project under their anonymous session.",
       },
       {
         id: crypto.randomUUID(),
@@ -248,25 +252,40 @@ async function run() {
       ),
     );
 
-    const retryRequirements = await runNextProjectStage(project.id, ownerId, deps);
+    const retryRequirements = await runNextProjectStage(
+      project.id,
+      ownerId,
+      deps,
+    );
     check(
       "Retry runs requirements again and succeeds",
-      retryRequirements.stage === "requirements" && retryRequirements.done === false,
+      retryRequirements.stage === "requirements" &&
+        retryRequirements.done === false,
       retryRequirements,
     );
 
     console.log("\n--- Part 2: Repeated calls complete the plan ---");
-    const runArchitecture = await runNextProjectStage(project.id, ownerId, deps);
+    const runArchitecture = await runNextProjectStage(
+      project.id,
+      ownerId,
+      deps,
+    );
     check(
       "Second successful call runs architecture only",
-      runArchitecture.stage === "architecture" && runArchitecture.done === false,
+      runArchitecture.stage === "architecture" &&
+        runArchitecture.done === false,
       runArchitecture,
     );
 
-    const runDecomposition = await runNextProjectStage(project.id, ownerId, deps);
+    const runDecomposition = await runNextProjectStage(
+      project.id,
+      ownerId,
+      deps,
+    );
     check(
       "Third successful call runs decomposition only",
-      runDecomposition.stage === "decomposition" && runDecomposition.done === false,
+      runDecomposition.stage === "decomposition" &&
+        runDecomposition.done === false,
       runDecomposition,
     );
 

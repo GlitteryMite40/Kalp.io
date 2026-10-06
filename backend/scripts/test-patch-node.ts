@@ -103,9 +103,24 @@ async function run() {
     const savedPlan = await savePlan({
       projectId: project.id,
       nodes: [
-        { node_key: "01.1", phase: "01", title: "Root Task", status: "not_started" },
-        { node_key: "01.2", phase: "01", title: "Dependent Task 1", status: "not_started" },
-        { node_key: "01.3", phase: "02", title: "Dependent Task 2", status: "not_started" },
+        {
+          node_key: "01.1",
+          phase: "01",
+          title: "Root Task",
+          status: "not_started",
+        },
+        {
+          node_key: "01.2",
+          phase: "01",
+          title: "Dependent Task 1",
+          status: "not_started",
+        },
+        {
+          node_key: "01.3",
+          phase: "02",
+          title: "Dependent Task 2",
+          status: "not_started",
+        },
       ],
       edges: [
         { from_node: "01.2", to_node: "01.1", type: "DEPENDS_ON" },
@@ -141,7 +156,10 @@ async function run() {
     });
     const bodyStartBlocked = await resStartBlocked.json();
 
-    check("Blocked start returns HTTP 400 Bad Request", resStartBlocked.status === 400);
+    check(
+      "Blocked start returns HTTP 400 Bad Request",
+      resStartBlocked.status === 400,
+    );
     check(
       "ACCEPTANCE CRITERIA: Blocked update rejected with code NODE_BLOCKED",
       bodyStartBlocked.error?.code === "NODE_BLOCKED",
@@ -176,7 +194,10 @@ async function run() {
     const resCompleteBlocked = await PATCH(reqCompleteBlocked, {
       params: Promise.resolve({ id: node2Id }),
     });
-    check("Completing a blocked node returns HTTP 400", resCompleteBlocked.status === 400);
+    check(
+      "Completing a blocked node returns HTTP 400",
+      resCompleteBlocked.status === 400,
+    );
 
     // Attempting to set ready on a blocked node is also rejected
     const reqReadyBlocked = new NextRequest(
@@ -193,7 +214,10 @@ async function run() {
     const resReadyBlocked = await PATCH(reqReadyBlocked, {
       params: Promise.resolve({ id: node2Id }),
     });
-    check("Setting ready on a blocked node returns HTTP 400", resReadyBlocked.status === 400);
+    check(
+      "Setting ready on a blocked node returns HTTP 400",
+      resReadyBlocked.status === 400,
+    );
 
     // =========================================================================
     // Part 2: Valid Node Update & Lifecycle
@@ -218,14 +242,23 @@ async function run() {
     });
     const bodyStartNode1 = await resStartNode1.json();
 
-    check("Starting unblocked node returns HTTP 200 OK", resStartNode1.status === 200);
+    check(
+      "Starting unblocked node returns HTTP 200 OK",
+      resStartNode1.status === 200,
+    );
     check("Response has success: true", bodyStartNode1.success === true);
-    check("Response status is 'in_progress'", bodyStartNode1.status === "in_progress");
+    check(
+      "Response status is 'in_progress'",
+      bodyStartNode1.status === "in_progress",
+    );
 
     const [dbNode1] = await db<{ status: string }[]>`
       SELECT status FROM nodes WHERE id = ${node1Id}
     `;
-    check("Database reflects 'in_progress' for Node 01.1", dbNode1?.status === "in_progress");
+    check(
+      "Database reflects 'in_progress' for Node 01.1",
+      dbNode1?.status === "in_progress",
+    );
 
     // Complete Node 01.1
     const reqCompleteNode1 = new NextRequest(
@@ -243,8 +276,14 @@ async function run() {
       params: Promise.resolve({ id: node1Id }),
     });
     const bodyCompleteNode1 = await resCompleteNode1.json();
-    check("Completing Node 01.1 returns HTTP 200 OK", resCompleteNode1.status === 200);
-    check("Response status is 'completed'", bodyCompleteNode1.status === "completed");
+    check(
+      "Completing Node 01.1 returns HTTP 200 OK",
+      resCompleteNode1.status === 200,
+    );
+    check(
+      "Response status is 'completed'",
+      bodyCompleteNode1.status === "completed",
+    );
 
     // =========================================================================
     // Part 3: Dynamic Unblocking Workflow
@@ -272,7 +311,10 @@ async function run() {
       "Unblocked Node 01.2 now starts successfully (HTTP 200)",
       resStartNode2.status === 200,
     );
-    check("Node 01.2 status is now 'in_progress'", bodyStartNode2.status === "in_progress");
+    check(
+      "Node 01.2 status is now 'in_progress'",
+      bodyStartNode2.status === "in_progress",
+    );
 
     // But Node 01.3 is STILL blocked because Node 01.2 is in_progress (not completed)
     const reqStartNode3 = new NextRequest(
@@ -346,9 +388,24 @@ async function run() {
       projectId: diamondProject.id,
       nodes: [
         { node_key: "root", phase: "01", title: "Root", status: "completed" },
-        { node_key: "branch_a", phase: "02", title: "Branch A", status: "not_started" },
-        { node_key: "branch_b", phase: "02", title: "Branch B", status: "not_started" },
-        { node_key: "join_d", phase: "03", title: "Join D", status: "not_started" },
+        {
+          node_key: "branch_a",
+          phase: "02",
+          title: "Branch A",
+          status: "not_started",
+        },
+        {
+          node_key: "branch_b",
+          phase: "02",
+          title: "Branch B",
+          status: "not_started",
+        },
+        {
+          node_key: "join_d",
+          phase: "03",
+          title: "Join D",
+          status: "not_started",
+        },
       ],
       edges: [
         { from_node: "branch_a", to_node: "root", type: "DEPENDS_ON" },
@@ -367,12 +424,20 @@ async function run() {
       `http://localhost:3000/api/nodes/${jDId}`,
       {
         method: "PATCH",
-        headers: { "content-type": "application/json", [OWNER_HEADER_NAME]: ownerA },
+        headers: {
+          "content-type": "application/json",
+          [OWNER_HEADER_NAME]: ownerA,
+        },
         body: JSON.stringify({ status: "in_progress" }),
       },
     );
-    const resJoin1 = await PATCH(reqStartJoin1, { params: Promise.resolve({ id: jDId }) });
-    check("Join node blocked before branches complete (HTTP 400)", resJoin1.status === 400);
+    const resJoin1 = await PATCH(reqStartJoin1, {
+      params: Promise.resolve({ id: jDId }),
+    });
+    check(
+      "Join node blocked before branches complete (HTTP 400)",
+      resJoin1.status === 400,
+    );
 
     // Complete branch_a
     await db`UPDATE nodes SET status = 'completed' WHERE id = ${bAId}`;
@@ -382,12 +447,20 @@ async function run() {
       `http://localhost:3000/api/nodes/${jDId}`,
       {
         method: "PATCH",
-        headers: { "content-type": "application/json", [OWNER_HEADER_NAME]: ownerA },
+        headers: {
+          "content-type": "application/json",
+          [OWNER_HEADER_NAME]: ownerA,
+        },
         body: JSON.stringify({ status: "in_progress" }),
       },
     );
-    const resJoin2 = await PATCH(reqStartJoin2, { params: Promise.resolve({ id: jDId }) });
-    check("Join node still blocked when only 1 branch done (HTTP 400)", resJoin2.status === 400);
+    const resJoin2 = await PATCH(reqStartJoin2, {
+      params: Promise.resolve({ id: jDId }),
+    });
+    check(
+      "Join node still blocked when only 1 branch done (HTTP 400)",
+      resJoin2.status === 400,
+    );
 
     // Complete branch_b
     await db`UPDATE nodes SET status = 'completed' WHERE id = ${bBId}`;
@@ -397,11 +470,16 @@ async function run() {
       `http://localhost:3000/api/nodes/${jDId}`,
       {
         method: "PATCH",
-        headers: { "content-type": "application/json", [OWNER_HEADER_NAME]: ownerA },
+        headers: {
+          "content-type": "application/json",
+          [OWNER_HEADER_NAME]: ownerA,
+        },
         body: JSON.stringify({ status: "in_progress" }),
       },
     );
-    const resJoin3 = await PATCH(reqStartJoin3, { params: Promise.resolve({ id: jDId }) });
+    const resJoin3 = await PATCH(reqStartJoin3, {
+      params: Promise.resolve({ id: jDId }),
+    });
     check(
       "Join node starts successfully once BOTH branches complete (HTTP 200)",
       resJoin3.status === 200,
@@ -418,7 +496,10 @@ async function run() {
       `http://localhost:3000/api/nodes/${randomUuid}`,
       {
         method: "PATCH",
-        headers: { "content-type": "application/json", [OWNER_HEADER_NAME]: ownerA },
+        headers: {
+          "content-type": "application/json",
+          [OWNER_HEADER_NAME]: ownerA,
+        },
         body: JSON.stringify({ status: "in_progress" }),
       },
     );
@@ -435,7 +516,10 @@ async function run() {
       "http://localhost:3000/api/nodes/completely-unknown-node-id",
       {
         method: "PATCH",
-        headers: { "content-type": "application/json", [OWNER_HEADER_NAME]: ownerA },
+        headers: {
+          "content-type": "application/json",
+          [OWNER_HEADER_NAME]: ownerA,
+        },
         body: JSON.stringify({ status: "in_progress" }),
       },
     );
@@ -452,7 +536,10 @@ async function run() {
       `http://localhost:3000/api/nodes/${node1Id}`,
       {
         method: "PATCH",
-        headers: { "content-type": "application/json", [OWNER_HEADER_NAME]: ownerB },
+        headers: {
+          "content-type": "application/json",
+          [OWNER_HEADER_NAME]: ownerB,
+        },
         body: JSON.stringify({ status: "in_progress" }),
       },
     );
@@ -491,28 +578,40 @@ async function run() {
       `http://localhost:3000/api/nodes/${node1Id}`,
       {
         method: "PATCH",
-        headers: { "content-type": "application/json", [OWNER_HEADER_NAME]: ownerA },
+        headers: {
+          "content-type": "application/json",
+          [OWNER_HEADER_NAME]: ownerA,
+        },
         body: JSON.stringify({ prompt: "some prompt" }),
       },
     );
     const resMissingStatus = await PATCH(reqMissingStatus, {
       params: Promise.resolve({ id: node1Id }),
     });
-    check("Missing status field returns HTTP 400 Bad Request", resMissingStatus.status === 400);
+    check(
+      "Missing status field returns HTTP 400 Bad Request",
+      resMissingStatus.status === 400,
+    );
 
     // Invalid status string
     const reqInvalidStatus = new NextRequest(
       `http://localhost:3000/api/nodes/${node1Id}`,
       {
         method: "PATCH",
-        headers: { "content-type": "application/json", [OWNER_HEADER_NAME]: ownerA },
+        headers: {
+          "content-type": "application/json",
+          [OWNER_HEADER_NAME]: ownerA,
+        },
         body: JSON.stringify({ status: "flying_to_mars" }),
       },
     );
     const resInvalidStatus = await PATCH(reqInvalidStatus, {
       params: Promise.resolve({ id: node1Id }),
     });
-    check("Invalid status value returns HTTP 400 Bad Request", resInvalidStatus.status === 400);
+    check(
+      "Invalid status value returns HTTP 400 Bad Request",
+      resInvalidStatus.status === 400,
+    );
 
     // =========================================================================
     // Part 7: GET /api/nodes/:id
@@ -533,9 +632,14 @@ async function run() {
 
     check("GET /api/nodes/:id returns HTTP 200 OK", resGetNode.status === 200);
     check("GET /api/nodes/:id returns matching id", bodyGetNode.id === node1Id);
-    check("GET /api/nodes/:id returns node_key", bodyGetNode.node_key === "01.1");
-    check("GET /api/nodes/:id returns is_blocked boolean", typeof bodyGetNode.is_blocked === "boolean");
-
+    check(
+      "GET /api/nodes/:id returns node_key",
+      bodyGetNode.node_key === "01.1",
+    );
+    check(
+      "GET /api/nodes/:id returns is_blocked boolean",
+      typeof bodyGetNode.is_blocked === "boolean",
+    );
   } finally {
     // Cleanup created test projects
     for (const pid of cleanupProjectIds) {

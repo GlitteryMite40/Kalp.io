@@ -372,10 +372,7 @@ export default function NodePanel({
                 JSON & Markdown checklist
               </span>
             </div>
-            <ExportMenu
-              data={{ nodes: allNodes }}
-              size="sm"
-            />
+            <ExportMenu data={{ nodes: allNodes }} size="sm" />
           </div>
         )}
       </div>

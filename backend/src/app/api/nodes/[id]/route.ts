@@ -7,7 +7,11 @@ import {
   type NodeStatus,
   toDbNodeStatus,
 } from "@/lib/schema";
-import { BadRequestError, NotFoundError, UnauthorizedError } from "@/lib/errors";
+import {
+  BadRequestError,
+  NotFoundError,
+  UnauthorizedError,
+} from "@/lib/errors";
 import { jsonError } from "@/server/response";
 
 export const runtime = "nodejs";

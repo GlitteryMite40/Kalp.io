@@ -99,9 +99,7 @@ export default function ExportMenu({
   const isDisabled = disabled || !hasNodes;
 
   const btnPadding =
-    size === "sm"
-      ? "px-2 py-1 text-[11px]"
-      : "px-2.5 py-1.5 text-xs";
+    size === "sm" ? "px-2 py-1 text-[11px]" : "px-2.5 py-1.5 text-xs";
 
   return (
     <div
@@ -118,7 +116,11 @@ export default function ExportMenu({
         aria-haspopup="true"
         aria-expanded={isOpen}
         aria-label="Export build plan"
-        title={isDisabled ? "No plan available to export" : "Export plan as JSON or Markdown"}
+        title={
+          isDisabled
+            ? "No plan available to export"
+            : "Export plan as JSON or Markdown"
+        }
         className={`inline-flex items-center gap-1.5 rounded-lg border font-semibold transition-all select-none disabled:opacity-40 disabled:cursor-not-allowed ${
           isOpen
             ? "border-indigo-500/50 bg-indigo-500/15 text-indigo-300 shadow-md shadow-indigo-500/10"
@@ -152,7 +154,11 @@ export default function ExportMenu({
           stroke="currentColor"
           strokeWidth="2"
         >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M19 9l-7 7-7-7"
+          />
         </svg>
       </button>
 

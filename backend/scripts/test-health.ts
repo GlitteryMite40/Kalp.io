@@ -57,9 +57,21 @@ async function run() {
     database?: { ok?: boolean; latencyMs?: number; error?: string };
   };
 
-  check("Healthy response returns HTTP 200", healthyRes.status === 200, healthyBody);
-  check("Healthy response status is ok", healthyBody.status === "ok", healthyBody);
-  check("Healthy response database.ok is true", healthyBody.database?.ok === true, healthyBody);
+  check(
+    "Healthy response returns HTTP 200",
+    healthyRes.status === 200,
+    healthyBody,
+  );
+  check(
+    "Healthy response status is ok",
+    healthyBody.status === "ok",
+    healthyBody,
+  );
+  check(
+    "Healthy response database.ok is true",
+    healthyBody.database?.ok === true,
+    healthyBody,
+  );
   check(
     "Healthy response includes numeric database latency",
     typeof healthyBody.database?.latencyMs === "number",
@@ -82,8 +94,16 @@ async function run() {
   };
 
   check("DB down response returns HTTP 503", downRes.status === 503, downBody);
-  check("DB down response status is unavailable", downBody.status === "unavailable", downBody);
-  check("DB down response database.ok is false", downBody.database?.ok === false, downBody);
+  check(
+    "DB down response status is unavailable",
+    downBody.status === "unavailable",
+    downBody,
+  );
+  check(
+    "DB down response database.ok is false",
+    downBody.database?.ok === false,
+    downBody,
+  );
   check(
     "DB down response does not expose raw database error",
     !("error" in (downBody.database ?? {})),
@@ -97,10 +117,15 @@ async function run() {
     status?: string;
     database?: { ok?: boolean; error?: string };
   };
-  check("Thrown DB ping response returns HTTP 503", thrownRes.status === 503, thrownBody);
+  check(
+    "Thrown DB ping response returns HTTP 503",
+    thrownRes.status === 503,
+    thrownBody,
+  );
   check(
     "Thrown DB ping response still hides raw error",
-    thrownBody.database?.ok === false && !("error" in (thrownBody.database ?? {})),
+    thrownBody.database?.ok === false &&
+      !("error" in (thrownBody.database ?? {})),
     thrownBody,
   );
 

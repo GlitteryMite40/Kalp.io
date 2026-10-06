@@ -126,5 +126,4 @@ export async function checkAndIncrementPlanGenerationUsage(
   });
 }
 
-export const consumePlanGenerationQuota =
-  checkAndIncrementPlanGenerationUsage;
+export const consumePlanGenerationQuota = checkAndIncrementPlanGenerationUsage;

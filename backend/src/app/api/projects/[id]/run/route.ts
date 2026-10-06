@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { type Requirement, type Node, type Edge } from "@/lib/schema";
-import { BadRequestError, NotFoundError, UnauthorizedError } from "@/lib/errors";
+import {
+  BadRequestError,
+  NotFoundError,
+  UnauthorizedError,
+} from "@/lib/errors";
 import { jsonError } from "@/server/response";
-import { extractRequirements, type ExtractedRequirements } from "@/server/extract";
+import {
+  extractRequirements,
+  type ExtractedRequirements,
+} from "@/server/extract";
 import {
   proposeArchitecture,
   type ProposedArchitecture,
@@ -46,13 +53,11 @@ export interface RunStageDependencies {
     architecture: ProposedArchitecture,
     projectId: string,
   ) => Promise<DecomposedGraph>;
-  criteriaStage?: (
-    graph: {
-      nodes: Node[];
-      edges: Edge[];
-      requirements: Requirement[];
-    },
-  ) => Promise<EnrichedGraphWithCriteria>;
+  criteriaStage?: (graph: {
+    nodes: Node[];
+    edges: Edge[];
+    requirements: Requirement[];
+  }) => Promise<EnrichedGraphWithCriteria>;
 }
 
 export interface RunStageResult {
@@ -64,7 +69,10 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function asObject(value: unknown, stage: PipelineStage): Record<string, unknown> {
+function asObject(
+  value: unknown,
+  stage: PipelineStage,
+): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new BadRequestError(`Stored output for stage "${stage}" is invalid`, {
       code: "INVALID_STAGE_OUTPUT",
@@ -73,7 +81,10 @@ function asObject(value: unknown, stage: PipelineStage): Record<string, unknown>
   return value as Record<string, unknown>;
 }
 
-function getRequirements(output: unknown, stage: PipelineStage): RequirementItem[] {
+function getRequirements(
+  output: unknown,
+  stage: PipelineStage,
+): RequirementItem[] {
   const obj = asObject(output, stage);
   if (!Array.isArray(obj.requirements)) {
     throw new BadRequestError(
@@ -130,12 +141,9 @@ async function runStage(
   }
 
   if (stage === "architecture") {
-    const requirementsOutput =
-      stages.requirements.output as ExtractedRequirements;
-    const requirements = getRequirements(
-      requirementsOutput,
-      "requirements",
-    );
+    const requirementsOutput = stages.requirements
+      .output as ExtractedRequirements;
+    const requirements = getRequirements(requirementsOutput, "requirements");
     if (deps.architectureStage) {
       return deps.architectureStage(requirements, requirementsOutput);
     }

@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import Graph from "@/components/Graph";
 import NodePanel from "@/components/NodePanel";
 import ExportMenu from "@/components/ExportMenu";
+import RepoConnect from "@/components/RepoConnect";
 import {
   api,
   ApiClientError,
@@ -273,6 +274,22 @@ export default function ProjectGraphPage({ params }: PageProps) {
           </button>
         </div>
       </header>
+
+      {/* GitHub Repo Integration Banner */}
+      {projectId && (
+        <div className="z-20 border-b border-zinc-800/80 bg-zinc-950/60 px-4 py-2 backdrop-blur-md">
+          <RepoConnect
+            projectId={projectId}
+            initialRepoInfo={
+              graphData?.project?.repo_url
+                ? {
+                    repo_url: graphData.project.repo_url,
+                  }
+                : undefined
+            }
+          />
+        </div>
+      )}
 
       {/* Main Graph Area */}
       <div className="relative flex flex-1 w-full overflow-hidden">

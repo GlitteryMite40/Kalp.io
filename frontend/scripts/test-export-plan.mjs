@@ -90,10 +90,16 @@ check(
 );
 
 const exportMenuPath = path.resolve("src/components/ExportMenu.tsx");
-check("src/components/ExportMenu.tsx exists on disk", fs.existsSync(exportMenuPath));
+check(
+  "src/components/ExportMenu.tsx exists on disk",
+  fs.existsSync(exportMenuPath),
+);
 
 const exportMenuContent = fs.readFileSync(exportMenuPath, "utf-8");
-check("ExportMenu is a 'use client' component", exportMenuContent.includes('"use client"'));
+check(
+  "ExportMenu is a 'use client' component",
+  exportMenuContent.includes('"use client"'),
+);
 check(
   "ExportMenu exports default function",
   exportMenuContent.includes("export default function ExportMenu"),
@@ -193,7 +199,13 @@ for (let i = 1; i <= 50; i++) {
   );
 
   const status =
-    i <= 15 ? "completed" : i <= 20 ? "in_progress" : i <= 28 ? "ready" : "blocked";
+    i <= 15
+      ? "completed"
+      : i <= 20
+        ? "in_progress"
+        : i <= 28
+          ? "ready"
+          : "blocked";
 
   FIFTY_NODES.push({
     id,
@@ -201,10 +213,14 @@ for (let i = 1; i <= 50; i++) {
     node_key: nodeKey,
     phase,
     title: `Task ${nodeKey}: Implement ${PHASE_NAMES[phase]} Step ${phaseSubIndex}`,
-    type: phaseSubIndex === 1 ? "setup" : phaseSubIndex % 2 === 0 ? "api" : "ui",
+    type:
+      phaseSubIndex === 1 ? "setup" : phaseSubIndex % 2 === 0 ? "api" : "ui",
     status,
     dependencies: uniqueDeps,
-    files: [`src/modules/${phase}/step-${phaseSubIndex}.ts`, `tests/${phase}/step-${phaseSubIndex}.test.ts`],
+    files: [
+      `src/modules/${phase}/step-${phaseSubIndex}.ts`,
+      `tests/${phase}/step-${phaseSubIndex}.test.ts`,
+    ],
     explanation: `Detailed implementation specification for build graph task ${nodeKey}.`,
     acceptance: [
       `Unit tests pass for ${nodeKey}`,
@@ -254,17 +270,31 @@ try {
 
 check("50-node plan exports valid parseable JSON", parsed50 !== null);
 check("JSON export version is '1.0'", parsed50?.version === "1.0");
-check("JSON export format is 'kalp-plan-v1'", parsed50?.format === "kalp-plan-v1");
-check("JSON export project name matches", parsed50?.project?.name === "Enterprise Dependency Orchestrator");
-check("JSON export summary reports 50 total nodes", parsed50?.summary?.total_nodes === 50);
-check("ACCEPTANCE CRITERIA: JSON contains all 50 nodes", parsed50?.nodes?.length === 50);
+check(
+  "JSON export format is 'kalp-plan-v1'",
+  parsed50?.format === "kalp-plan-v1",
+);
+check(
+  "JSON export project name matches",
+  parsed50?.project?.name === "Enterprise Dependency Orchestrator",
+);
+check(
+  "JSON export summary reports 50 total nodes",
+  parsed50?.summary?.total_nodes === 50,
+);
+check(
+  "ACCEPTANCE CRITERIA: JSON contains all 50 nodes",
+  parsed50?.nodes?.length === 50,
+);
 
 // Check that EVERY node is present with its exact node_key and title
 let all50NodesPresentInJson = true;
 let all50DepsAccurateInJson = true;
 
 for (const expectedNode of FIFTY_NODES) {
-  const found = parsed50?.nodes?.find((n) => n.node_key === expectedNode.node_key);
+  const found = parsed50?.nodes?.find(
+    (n) => n.node_key === expectedNode.node_key,
+  );
   if (!found || found.title !== expectedNode.title) {
     all50NodesPresentInJson = false;
   }
@@ -309,11 +339,15 @@ const md50Str = generatePlanMarkdown(FIFTY_PLAN_INPUT);
 
 check(
   "Markdown export contains project title header",
-  md50Str.includes("# Enterprise Dependency Orchestrator - Build Plan Checklist"),
+  md50Str.includes(
+    "# Enterprise Dependency Orchestrator - Build Plan Checklist",
+  ),
 );
 check(
   "Markdown export contains project idea quote",
-  md50Str.includes("> A 50-node automated pipeline system for multi-stage microservices."),
+  md50Str.includes(
+    "> A 50-node automated pipeline system for multi-stage microservices.",
+  ),
 );
 check(
   "Markdown export contains summary stats with 50 nodes",
@@ -335,7 +369,9 @@ let all50DepsInMarkdown = true;
 
 for (const expectedNode of FIFTY_NODES) {
   // Checkbox presence: e.g. - [x] **[01.1] ...** or - [ ] **[01.1] ...**
-  const checkboxRegex = new RegExp(`- \\[([ x])\\] \\*\\*\\[${expectedNode.node_key}\\]`);
+  const checkboxRegex = new RegExp(
+    `- \\[([ x])\\] \\*\\*\\[${expectedNode.node_key}\\]`,
+  );
   if (!checkboxRegex.test(md50Str)) {
     all50NodesInMarkdown = false;
   }
@@ -389,7 +425,7 @@ const SPECIAL_CHAR_NODES = [
   {
     id: "spec-1",
     node_key: "01.1",
-    title: 'Setup "Double Quotes" & \'Single Quotes\' In Title',
+    title: "Setup \"Double Quotes\" & 'Single Quotes' In Title",
     phase: "01",
     type: "setup",
     status: "completed",
@@ -417,7 +453,9 @@ const SPECIAL_CHAR_NODES = [
     status: "in_progress",
     dependencies: ["01.2"],
     files: ["src/markdown-parser.ts"],
-    acceptance: ["Markdown asterisks * and backticks ` do not corrupt checklist"],
+    acceptance: [
+      "Markdown asterisks * and backticks ` do not corrupt checklist",
+    ],
   },
   {
     id: "spec-4",
@@ -444,7 +482,8 @@ const SPECIAL_CHAR_NODES = [
   {
     id: "spec-6",
     node_key: "03.2",
-    title: "Unicode & Internationalization: Café résumé Über-API 日本語 🚀 ⚡ 🎯",
+    title:
+      "Unicode & Internationalization: Café résumé Über-API 日本語 🚀 ⚡ 🎯",
     phase: "03",
     type: "i18n",
     status: "not_started",
@@ -461,7 +500,9 @@ const SPECIAL_CHAR_NODES = [
     status: "not_started",
     dependencies: ["03.2"],
     files: ["src/multiline.ts"],
-    acceptance: ["Multiline titles sanitized into single-line checklist headers"],
+    acceptance: [
+      "Multiline titles sanitized into single-line checklist headers",
+    ],
   },
 ];
 
@@ -494,10 +535,14 @@ try {
   console.error("Special characters JSON parse failed:", err);
 }
 
-check("Special characters plan produces valid parseable JSON", parsedSpecial !== null);
+check(
+  "Special characters plan produces valid parseable JSON",
+  parsedSpecial !== null,
+);
 check(
   "JSON preserves project name with quotes and symbols",
-  parsedSpecial?.project?.name === 'Special: Characters / "Project" <v1.0> *MVP*',
+  parsedSpecial?.project?.name ===
+    'Special: Characters / "Project" <v1.0> *MVP*',
 );
 
 // Verify exact title equality in JSON for every special node
@@ -518,7 +563,7 @@ const specialMdStr = generatePlanMarkdown(SPECIAL_PLAN_INPUT);
 
 check(
   "Markdown includes quotes title without syntax breakdown",
-  specialMdStr.includes('Setup "Double Quotes" & \'Single Quotes\' In Title'),
+  specialMdStr.includes("Setup \"Double Quotes\" & 'Single Quotes' In Title"),
 );
 check(
   "Markdown includes angle bracket component tags",
@@ -526,11 +571,15 @@ check(
 );
 check(
   "Markdown includes markdown symbols asterisks and backticks",
-  specialMdStr.includes("Support *Markdown* **Bold** `code` ~~strikethrough~~ #hashtag"),
+  specialMdStr.includes(
+    "Support *Markdown* **Bold** `code` ~~strikethrough~~ #hashtag",
+  ),
 );
 check(
   "Markdown includes backslashes and forward slashes",
-  specialMdStr.includes("File Paths: C:\\Users\\kalp\\repo & /api/v1/projects/:id"),
+  specialMdStr.includes(
+    "File Paths: C:\\Users\\kalp\\repo & /api/v1/projects/:id",
+  ),
 );
 check(
   "Markdown includes ampersands and inequalities",
@@ -548,7 +597,9 @@ const multilineNodeLine = specialMdStr
 check(
   "TEST CASE: Multiline title sanitized into single checklist line without orphaned lines",
   multilineNodeLine !== undefined &&
-    multilineNodeLine.includes("Multiline Title With Carriage Return And Newline Characters"),
+    multilineNodeLine.includes(
+      "Multiline Title With Carriage Return And Newline Characters",
+    ),
 );
 
 // ---------------------------------------------------------------------------
@@ -557,7 +608,7 @@ check(
 console.log("\n--- Part 4: Filename Sanitization & Cross-Platform Naming ---");
 
 check(
-  "sanitizeFilename strips illegal Windows / UNIX characters (: * ? \" < > | / \\)",
+  'sanitizeFilename strips illegal Windows / UNIX characters (: * ? " < > | / \\)',
   sanitizeFilename('My: Cool * "Project" <v2.0> / Test \\ Plan ?') ===
     "My-Cool-Project-v2.0-Test-Plan",
 );
@@ -607,7 +658,11 @@ const edgesFixture = [
   { from_node: "node-a-id", to_node: "node-b-id", type: "dependency" },
 ];
 
-const resolved = resolveNodeDependencies(nodeWithEdgeOnly, edgesFixture, allNodesFixture);
+const resolved = resolveNodeDependencies(
+  nodeWithEdgeOnly,
+  edgesFixture,
+  allNodesFixture,
+);
 check(
   "resolveNodeDependencies maps incoming edges from node UUID to source node_key",
   resolved.length === 1 && resolved[0] === "02.1",
@@ -625,7 +680,11 @@ const edgesDuplicate = [
   { from_node_key: "02.3", to_node_key: "03.1", type: "dependency" },
 ];
 
-const resolvedMerged = resolveNodeDependencies(nodeWithBoth, edgesDuplicate, []);
+const resolvedMerged = resolveNodeDependencies(
+  nodeWithBoth,
+  edgesDuplicate,
+  [],
+);
 check(
   "resolveNodeDependencies merges and deduplicates dependencies from both sources",
   resolvedMerged.length === 3 &&
@@ -640,19 +699,25 @@ check(
 console.log("\n--- Part 6: Browser Download Dispatch (Mock DOM) ---");
 
 // Test downloadFile in SSR environment (no document) -> returns false gracefully
-const ssrDownloadResult = downloadFile("content", "file.json", "application/json", {
-  documentObj: null,
-});
-check("downloadFile gracefully returns false in SSR / non-browser context", ssrDownloadResult === false);
+const ssrDownloadResult = downloadFile(
+  "content",
+  "file.json",
+  "application/json",
+  {
+    documentObj: null,
+  },
+);
+check(
+  "downloadFile gracefully returns false in SSR / non-browser context",
+  ssrDownloadResult === false,
+);
 
 // Mock DOM elements to test browser download simulation
 let createdElement = null;
 let clicked = false;
 let appendedChild = null;
-let removedChild = null;
 let createdBlobParts = null;
 let createdUrl = null;
-let revokedUrl = null;
 
 const mockLink = {
   href: "",
@@ -662,9 +727,7 @@ const mockLink = {
     clicked = true;
   },
   parentNode: {
-    removeChild(child) {
-      removedChild = child;
-    },
+    removeChild() {},
   },
 };
 
@@ -691,24 +754,44 @@ const mockBlob = (parts, opts) => {
   return { parts, type: opts?.type };
 };
 
-const downloadSuccess = downloadFile("export test content", "plan.json", "application/json", {
-  documentObj: mockDoc,
-  createBlobFn: mockBlob,
-  createObjectURLFn: (b) => {
-    createdUrl = "blob:http://localhost/test-uuid";
-    return createdUrl;
+const downloadSuccess = downloadFile(
+  "export test content",
+  "plan.json",
+  "application/json",
+  {
+    documentObj: mockDoc,
+    createBlobFn: mockBlob,
+    createObjectURLFn: () => {
+      createdUrl = "blob:http://localhost/test-uuid";
+      return createdUrl;
+    },
+    revokeObjectURLFn: (u) => {
+      revokedUrl = u;
+    },
+    revokeTimeoutMs: 10,
   },
-  revokeObjectURLFn: (u) => {
-    revokedUrl = u;
-  },
-  revokeTimeoutMs: 10,
-});
+);
 
-check("downloadFile returns true when mock DOM is available", downloadSuccess === true);
+check(
+  "downloadFile returns true when mock DOM is available",
+  downloadSuccess === true,
+);
 check("downloadFile creates an <a> anchor tag", createdElement !== null);
-check("downloadFile sets anchor download attribute to 'plan.json'", mockLink.download === "plan.json");
-check("downloadFile sets anchor href to blob URL", mockLink.href === "blob:http://localhost/test-uuid");
+check(
+  "downloadFile creates Blob with export content",
+  Array.isArray(createdBlobParts) &&
+    createdBlobParts[0] === "export test content",
+);
+check(
+  "downloadFile sets anchor download attribute to 'plan.json'",
+  mockLink.download === "plan.json",
+);
+check(
+  "downloadFile sets anchor href to blob URL",
+  mockLink.href === "blob:http://localhost/test-uuid",
+);
 check("downloadFile triggers synthetic click on link", clicked === true);
+check("downloadFile appends link to body", appendedChild !== null);
 
 // Test downloadPlanJson and downloadPlanMarkdown wrapper functions
 const dlJsonResult = downloadPlanJson(SPECIAL_PLAN_INPUT, "custom-plan.json", {
@@ -742,13 +825,21 @@ console.log("\n--- Part 7: Edge Cases ---");
 const emptyPlan = { project: { name: "Empty Project" }, nodes: [] };
 const emptyJson = generatePlanJson(emptyPlan);
 const parsedEmpty = JSON.parse(emptyJson);
-check("Empty plan generates valid JSON with total_nodes = 0", parsedEmpty.summary.total_nodes === 0);
+check(
+  "Empty plan generates valid JSON with total_nodes = 0",
+  parsedEmpty.summary.total_nodes === 0,
+);
 
 const emptyMd = generatePlanMarkdown(emptyPlan);
-check("Empty plan generates Markdown noting no nodes present", emptyMd.includes("_No nodes present in this plan._"));
+check(
+  "Empty plan generates Markdown noting no nodes present",
+  emptyMd.includes("_No nodes present in this plan._"),
+);
 
 // Plan with null/undefined project
-const nullProjPlan = { nodes: [{ node_key: "01.1", title: "Solitary Task", phase: "01" }] };
+const nullProjPlan = {
+  nodes: [{ node_key: "01.1", title: "Solitary Task", phase: "01" }],
+};
 const nullProjJson = generatePlanJson(nullProjPlan);
 const parsedNullProj = JSON.parse(nullProjJson);
 check(
