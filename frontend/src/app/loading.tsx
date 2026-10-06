@@ -11,9 +11,7 @@ export default function Loading() {
             <p className="text-sm font-semibold text-white">
               Preparing workspace
             </p>
-            <p className="mt-1 text-sm text-zinc-400">
-              Loading the next view.
-            </p>
+            <p className="mt-1 text-sm text-zinc-400">Loading the next view.</p>
           </div>
         </div>
       </div>

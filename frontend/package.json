@@ -10,11 +10,13 @@
     "typecheck": "tsc --noEmit",
     "test:api": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-api-client.mjs",
     "test:input": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-input-page.mjs",
-    "test": "npm run test:api && npm run test:input",
+    "test:graph": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-graph-render.mjs",
+    "test": "npm run test:api && npm run test:input && npm run test:graph",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "@xyflow/react": "^12.12.0",
     "next": "16.3.8",
     "react": "19.2.8",
     "react-dom": "19.2.8"

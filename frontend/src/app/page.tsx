@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import FeaturesGrid from "@/components/FeaturesGrid";
 import Footer from "@/components/Footer";
@@ -839,6 +840,12 @@ export default function Home() {
                       Specs
                     </div>
                   </div>
+                  <Link
+                    href={`/p/${graphData.project_id}`}
+                    className="rounded-xl bg-gradient-to-r from-indigo-500 via-indigo-600 to-violet-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-indigo-500/20 hover:from-indigo-400 hover:to-violet-500 transition-all flex items-center gap-1.5"
+                  >
+                    Open Full Graph →
+                  </Link>
                   <button
                     type="button"
                     onClick={handleStartNewProject}
