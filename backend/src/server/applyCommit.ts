@@ -16,6 +16,11 @@ import {
   type FileMatchSuggestion,
   type DbClient,
 } from "./fileMatch";
+import {
+  compareFiles,
+  type DriftClassification,
+  type DriftResult,
+} from "./drift";
 
 export interface ApplyCommitInput {
   projectId: string;
@@ -33,6 +38,9 @@ export interface CommitRecord {
   node_id: string | null;
   suggested_node_id?: string | null;
   confidence?: number | null;
+  has_drift?: boolean;
+  drift_score?: number | null;
+  drift_reason?: string | null;
   sha: string;
   message: string | null;
   files: string[];
@@ -54,6 +62,10 @@ export interface ApplyCommitResult {
   suggestedNodeKey?: string | null;
   confidence?: number | null;
   suggestions?: FileMatchSuggestion[];
+  hasDrift?: boolean;
+  driftScore?: number | null;
+  driftClassification?: DriftClassification;
+  driftReason?: string;
 }
 
 /**
@@ -123,6 +135,7 @@ export async function applyCommit(
     let matchedNodeId: string | null = null;
     let matchedNodeKey: string | null = null;
     let nodeUpdated = false;
+    let driftResult: DriftResult | null = null;
 
     if (nodeKeys.length > 0) {
       const matchingNodes = await tx<NodeRecord[]>`
@@ -137,11 +150,18 @@ export async function applyCommit(
         matchedNodeKey = matchingNodes[0].node_key;
 
         const matchingIds = matchingNodes.map((n) => n.id);
+        const expectedFiles = Array.from(
+          new Set(matchingNodes.flatMap((n) => n.files || [])),
+        );
+        driftResult = compareFiles(files, expectedFiles);
 
-        // Update all matched nodes to 'committed'
+        // Update all matched nodes to 'committed', along with drift info
         const updatedRows = await tx<Array<{ id: string }>>`
           UPDATE nodes
-          SET status = 'committed'
+          SET status = 'committed',
+              has_drift = ${driftResult.hasDrift},
+              drift_score = ${driftResult.driftScore},
+              drift_reason = ${driftResult.reason}
           WHERE project_id = ${projectId}
             AND id = ANY(${matchingIds}::uuid[])
           RETURNING id
@@ -196,6 +216,9 @@ export async function applyCommit(
         node_id,
         suggested_node_id,
         confidence,
+        has_drift,
+        drift_score,
+        drift_reason,
         sha,
         message,
         files,
@@ -206,6 +229,9 @@ export async function applyCommit(
         ${matchedNodeId},
         ${suggestedNodeId},
         ${confidence},
+        ${driftResult ? driftResult.hasDrift : false},
+        ${driftResult ? driftResult.driftScore : null},
+        ${driftResult ? driftResult.reason : null},
         ${cleanSha},
         ${cleanMessage},
         ${files},
@@ -216,6 +242,9 @@ export async function applyCommit(
       SET node_id = COALESCE(EXCLUDED.node_id, commits.node_id),
           suggested_node_id = COALESCE(EXCLUDED.suggested_node_id, commits.suggested_node_id),
           confidence = COALESCE(EXCLUDED.confidence, commits.confidence),
+          has_drift = COALESCE(EXCLUDED.has_drift, commits.has_drift),
+          drift_score = COALESCE(EXCLUDED.drift_score, commits.drift_score),
+          drift_reason = COALESCE(EXCLUDED.drift_reason, commits.drift_reason),
           message = COALESCE(EXCLUDED.message, commits.message),
           files = CASE
             WHEN EXCLUDED.files IS NOT NULL AND array_length(EXCLUDED.files, 1) > 0 THEN EXCLUDED.files
@@ -244,6 +273,10 @@ export async function applyCommit(
       suggestedNodeKey,
       confidence,
       suggestions,
+      hasDrift: driftResult?.hasDrift,
+      driftScore: driftResult?.driftScore,
+      driftClassification: driftResult?.classification,
+      driftReason: driftResult?.reason,
     };
   };
 
