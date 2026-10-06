@@ -1,0 +1,439 @@
+"use client";
+
+import React, { useState } from "react";
+import type { ComputedNode, NodeStatus } from "@/types/api";
+import { STATUS_STYLES, TYPE_STYLES } from "@/lib/graph";
+
+export interface NodePanelProps {
+  node: ComputedNode | null;
+  isOpen?: boolean;
+  onClose?: () => void;
+  onSelectNodeByKey?: (nodeKey: string) => void;
+  onUpdateStatus?: (nodeId: string, status: NodeStatus) => Promise<void> | void;
+  isUpdatingStatus?: boolean;
+  allNodes?: ComputedNode[];
+  className?: string;
+}
+
+export default function NodePanel({
+  node,
+  isOpen = true,
+  onClose,
+  onSelectNodeByKey,
+  onUpdateStatus,
+  isUpdatingStatus = false,
+  allNodes = [],
+  className = "",
+}: NodePanelProps) {
+  const [copiedFile, setCopiedFile] = useState<string | null>(null);
+  const [copiedTest, setCopiedTest] = useState<string | null>(null);
+
+  if (!isOpen || !node) {
+    return null;
+  }
+
+  const status = (node.computed_status ||
+    node.status ||
+    "not_started") as NodeStatus;
+  const statusCfg = STATUS_STYLES[status] || STATUS_STYLES.not_started;
+  const typeKey = (node.type || "").toLowerCase();
+  const typeCfg = TYPE_STYLES[typeKey] || {
+    badge: (node.type || "TASK").toUpperCase().slice(0, 4),
+    color: "text-zinc-400 border-zinc-700 bg-zinc-800/40",
+  };
+
+  const handleCopy = (text: string, type: "file" | "test") => {
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      void navigator.clipboard.writeText(text);
+      if (type === "file") {
+        setCopiedFile(text);
+        setTimeout(() => setCopiedFile(null), 1500);
+      } else {
+        setCopiedTest(text);
+        setTimeout(() => setCopiedTest(null), 1500);
+      }
+    }
+  };
+
+  // Find downstream dependents: nodes in allNodes that depend on current node
+  const downstreamDependents = allNodes.filter(
+    (other) =>
+      other.dependencies?.includes(node.node_key) ||
+      other.dependencies?.includes(node.id) ||
+      other.blocked_by?.includes(node.node_key),
+  );
+
+  return (
+    <aside
+      data-testid="node-panel"
+      aria-label="Node Inspector"
+      className={`w-80 md:w-96 shrink-0 border-l border-zinc-800/80 bg-zinc-900/95 backdrop-blur-xl flex flex-col h-full z-20 shadow-2xl overflow-hidden animate-in slide-in-from-right duration-200 select-none ${className}`}
+    >
+      {/* 1. Panel Header */}
+      <div className="flex items-center justify-between border-b border-zinc-800 p-4 shrink-0 bg-zinc-950/40">
+        <div className="flex items-center gap-2 min-w-0">
+          <span
+            data-testid="node-panel-key"
+            className="font-mono text-xs font-bold px-2 py-0.5 rounded border border-indigo-500/30 bg-indigo-500/15 text-indigo-300 shrink-0"
+          >
+            {node.node_key}
+          </span>
+          <span className="text-xs font-mono text-zinc-400 uppercase font-semibold truncate">
+            Node Inspector
+          </span>
+        </div>
+
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            data-testid="node-panel-close-btn"
+            className="text-zinc-400 hover:text-white text-sm leading-none p-1.5 rounded-lg hover:bg-zinc-800 transition-colors"
+            title="Close Inspector"
+          >
+            ✕
+          </button>
+        )}
+      </div>
+
+      {/* 2. Scrollable Body */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-5 text-left text-xs">
+        {/* Title & Phase */}
+        <div>
+          <div className="flex items-center gap-2 mb-1.5">
+            <span
+              data-testid="node-panel-phase"
+              className="font-mono text-[11px] text-zinc-400"
+            >
+              {node.phase}
+            </span>
+            {node.type && (
+              <span
+                data-testid="node-panel-type"
+                className={`rounded px-1.5 py-0.5 text-[10px] font-mono font-semibold border ${typeCfg.color}`}
+              >
+                {typeCfg.badge}
+              </span>
+            )}
+          </div>
+          <h3
+            data-testid="node-panel-title"
+            className="text-base font-bold text-white leading-snug tracking-tight"
+          >
+            {node.title}
+          </h3>
+        </div>
+
+        {/* 3. Status Section */}
+        <div
+          data-testid="node-panel-status"
+          className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3 space-y-3"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-zinc-400 font-medium">Current Status</span>
+            <span
+              data-testid="node-panel-status-badge"
+              className={`flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${statusCfg.badgeBg} ${statusCfg.badgeText}`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${statusCfg.dot}`} />
+              {statusCfg.label}
+            </span>
+          </div>
+
+          {/* Blocked by Alert Banner */}
+          {node.is_blocked && node.blocked_by && node.blocked_by.length > 0 && (
+            <div
+              data-testid="node-panel-blocked-banner"
+              className="rounded-lg border border-rose-500/40 bg-rose-950/20 p-2.5 text-rose-300"
+            >
+              <div className="flex items-center gap-1.5 font-semibold text-[11px] mb-1.5">
+                <span className="h-2 w-2 rounded-full bg-rose-400" />
+                <span>
+                  Blocked by {node.blocked_by.length} prerequisite(s):
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {node.blocked_by.map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => onSelectNodeByKey?.(key)}
+                    className="rounded bg-rose-500/20 hover:bg-rose-500/30 px-2 py-0.5 font-mono text-[11px] text-rose-200 transition-colors border border-rose-500/30 flex items-center gap-1"
+                  >
+                    <span>{key}</span>
+                    <span className="text-[10px]">→</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Interactive Status Transition Buttons */}
+          {onUpdateStatus && (
+            <div>
+              <span className="text-[11px] font-mono text-zinc-500 uppercase block mb-1.5">
+                Update Status
+              </span>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  data-testid="btn-status-in-progress"
+                  disabled={isUpdatingStatus || node.is_blocked}
+                  onClick={() => void onUpdateStatus(node.id, "in_progress")}
+                  className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 font-semibold text-amber-300 hover:bg-amber-500/20 disabled:opacity-40 transition-colors"
+                >
+                  Start Task
+                </button>
+                <button
+                  type="button"
+                  data-testid="btn-status-completed"
+                  disabled={isUpdatingStatus || node.is_blocked}
+                  onClick={() => void onUpdateStatus(node.id, "completed")}
+                  className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-2 py-1.5 font-semibold text-cyan-300 hover:bg-cyan-500/20 disabled:opacity-40 transition-colors"
+                >
+                  Mark Complete
+                </button>
+                <button
+                  type="button"
+                  data-testid="btn-status-committed"
+                  disabled={isUpdatingStatus}
+                  onClick={() => void onUpdateStatus(node.id, "committed")}
+                  className="rounded-lg border border-violet-500/30 bg-violet-500/10 px-2 py-1.5 font-semibold text-violet-300 hover:bg-violet-500/20 disabled:opacity-40 transition-colors"
+                >
+                  Commit
+                </button>
+                <button
+                  type="button"
+                  data-testid="btn-status-ready"
+                  disabled={isUpdatingStatus}
+                  onClick={() => void onUpdateStatus(node.id, "ready")}
+                  className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-1.5 font-semibold text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors"
+                >
+                  Mark Ready
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 4. Purpose Section */}
+        <div data-testid="node-panel-purpose">
+          <span className="font-mono text-zinc-500 text-[10px] uppercase font-bold block mb-1.5">
+            Purpose
+          </span>
+          <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 leading-relaxed text-zinc-300">
+            {node.explanation ? (
+              <p>{node.explanation}</p>
+            ) : (
+              <p className="text-zinc-500 italic">
+                No purpose description available.
+              </p>
+            )}
+            {node.requirement_key && (
+              <div className="mt-2 pt-2 border-t border-zinc-800/80 flex items-center gap-1.5 text-[11px] font-mono text-zinc-400">
+                <span className="text-zinc-500">Requirement:</span>
+                <span className="text-indigo-300 font-semibold">
+                  {node.requirement_key}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 5. Dependencies Section */}
+        <div data-testid="node-panel-dependencies">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="font-mono text-zinc-500 text-[10px] uppercase font-bold">
+              Dependencies ({node.dependencies?.length || 0})
+            </span>
+            <span className="text-[10px] text-zinc-500 font-mono">
+              Prerequisites
+            </span>
+          </div>
+
+          {node.dependencies && node.dependencies.length > 0 ? (
+            <div className="space-y-1.5">
+              {node.dependencies.map((dep) => {
+                const targetNode = allNodes.find(
+                  (n) => n.node_key === dep || n.id === dep,
+                );
+                const depStatus = (targetNode?.computed_status ||
+                  targetNode?.status ||
+                  "not_started") as NodeStatus;
+                const depStatusCfg =
+                  STATUS_STYLES[depStatus] || STATUS_STYLES.not_started;
+
+                return (
+                  <button
+                    key={dep}
+                    type="button"
+                    onClick={() => onSelectNodeByKey?.(dep)}
+                    className="w-full flex items-center justify-between p-2 rounded-lg border border-zinc-800 bg-zinc-950/40 hover:border-indigo-500/40 hover:bg-zinc-800/40 transition-colors text-left group"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-mono font-bold text-indigo-400 text-[11px] shrink-0">
+                        {dep}
+                      </span>
+                      {targetNode && (
+                        <span className="truncate text-zinc-300 text-xs">
+                          {targetNode.title}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                      {targetNode && (
+                        <span
+                          className={`h-1.5 w-1.5 rounded-full ${depStatusCfg.dot}`}
+                        />
+                      )}
+                      <span className="text-zinc-500 group-hover:text-indigo-300 text-xs">
+                        →
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-zinc-800/80 bg-zinc-950/20 p-2.5 text-zinc-500 text-xs italic">
+              No prerequisites — root module.
+            </div>
+          )}
+
+          {/* Downstream Dependents */}
+          {downstreamDependents.length > 0 && (
+            <div className="mt-3">
+              <span className="font-mono text-zinc-500 text-[10px] uppercase font-bold block mb-1">
+                Required By ({downstreamDependents.length})
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {downstreamDependents.map((down) => (
+                  <button
+                    key={down.id}
+                    type="button"
+                    onClick={() => onSelectNodeByKey?.(down.node_key)}
+                    className="rounded bg-zinc-800/80 hover:bg-zinc-700/80 px-2 py-1 font-mono text-[11px] text-zinc-300 border border-zinc-700/80 transition-colors"
+                  >
+                    {down.node_key} →
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 6. Files Section */}
+        <div data-testid="node-panel-files">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="font-mono text-zinc-500 text-[10px] uppercase font-bold">
+              Files ({node.files?.length || 0})
+            </span>
+            <span className="text-[10px] text-zinc-500 font-mono">
+              Target Codebase
+            </span>
+          </div>
+
+          {node.files && node.files.length > 0 ? (
+            <div className="space-y-1.5">
+              {node.files.map((file, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between gap-2 rounded-lg border border-zinc-800 bg-zinc-950/80 px-2.5 py-1.5 font-mono text-[11px] text-zinc-300 group"
+                >
+                  <span className="truncate" title={file}>
+                    {file}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(file, "file")}
+                    className="text-[10px] text-zinc-500 hover:text-white shrink-0 px-1 py-0.5 rounded hover:bg-zinc-800 transition-colors"
+                    title="Copy path"
+                  >
+                    {copiedFile === file ? "Copied" : "Copy"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-zinc-800/80 bg-zinc-950/20 p-2.5 text-zinc-500 text-xs italic">
+              No files specified for this node.
+            </div>
+          )}
+        </div>
+
+        {/* 7. Criteria Section */}
+        <div data-testid="node-panel-criteria">
+          <span className="font-mono text-zinc-500 text-[10px] uppercase font-bold block mb-1.5">
+            Acceptance Criteria ({node.acceptance?.length || 0})
+          </span>
+
+          {node.acceptance && node.acceptance.length > 0 ? (
+            <ul className="space-y-1.5">
+              {node.acceptance.map((crit, idx) => (
+                <li
+                  key={idx}
+                  className="flex items-start gap-2 rounded-lg border border-zinc-800/80 bg-zinc-950/40 p-2.5 text-zinc-300 leading-relaxed"
+                >
+                  <span className="mt-0.5 text-emerald-400 font-bold shrink-0">
+                    ✓
+                  </span>
+                  <span>{crit}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="rounded-xl border border-zinc-800/80 bg-zinc-950/20 p-2.5 text-zinc-500 text-xs italic">
+              No acceptance criteria specified.
+            </div>
+          )}
+        </div>
+
+        {/* 8. Tests Section */}
+        <div data-testid="node-panel-tests">
+          <span className="font-mono text-zinc-500 text-[10px] uppercase font-bold block mb-1.5">
+            Tests & Verification ({node.tests?.length || 0})
+          </span>
+
+          {node.tests && node.tests.length > 0 ? (
+            <div className="space-y-1.5">
+              {node.tests.map((test, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between gap-2 rounded-lg border border-zinc-800 bg-zinc-950/80 p-2 font-mono text-[11px] text-zinc-300 group"
+                >
+                  <span className="truncate text-zinc-400">
+                    <span className="text-indigo-400">$</span> {test}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(test, "test")}
+                    className="text-[10px] text-zinc-500 hover:text-white shrink-0 px-1 py-0.5 rounded hover:bg-zinc-800 transition-colors"
+                    title="Copy command"
+                  >
+                    {copiedTest === test ? "Copied" : "Copy"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-zinc-800/80 bg-zinc-950/20 p-2.5 text-zinc-500 text-xs italic">
+              No test commands specified.
+            </div>
+          )}
+        </div>
+
+        {/* 9. AI Prompt (Optional) */}
+        {node.prompt && (
+          <div data-testid="node-panel-prompt">
+            <span className="font-mono text-zinc-500 text-[10px] uppercase font-bold block mb-1.5">
+              Generation Prompt
+            </span>
+            <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded-lg border border-zinc-800 bg-zinc-950 p-2.5 font-mono text-[10px] text-zinc-400 leading-relaxed">
+              {node.prompt}
+            </pre>
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}

@@ -4,6 +4,7 @@ import React, { useEffect, useState, use } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import Graph from "@/components/Graph";
+import NodePanel from "@/components/NodePanel";
 import {
   api,
   ApiClientError,
@@ -11,7 +12,6 @@ import {
   type NodeStatus,
   type ProjectGraphData,
 } from "@/lib/api";
-import { STATUS_STYLES } from "@/components/Graph";
 
 interface PageProps {
   params: Promise<{ id: string }> | { id: string };
@@ -326,247 +326,15 @@ export default function ProjectGraphPage({ params }: PageProps) {
         )}
 
         {/* Node Inspector Drawer / Sidebar */}
-        {graphData && inspectorOpen && selectedNode && (
-          <aside className="w-80 md:w-96 shrink-0 border-l border-zinc-800/80 bg-zinc-900/95 backdrop-blur-xl flex flex-col h-full z-20 shadow-2xl overflow-hidden animate-in slide-in-from-right duration-200">
-            {/* Inspector Header */}
-            <div className="flex items-center justify-between border-b border-zinc-800 p-4 shrink-0">
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-xs font-bold px-2 py-0.5 rounded border border-indigo-500/30 bg-indigo-500/10 text-indigo-400">
-                  {selectedNode.node_key}
-                </span>
-                <span className="text-xs font-mono text-zinc-400 uppercase font-semibold">
-                  Node Inspector
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setInspectorOpen(false)}
-                className="text-zinc-400 hover:text-white text-base leading-none p-1 rounded hover:bg-zinc-800 transition-colors"
-                title="Close Inspector"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Inspector Content */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-5 text-left text-xs">
-              {/* Title & Phase */}
-              <div>
-                <h3 className="text-base font-bold text-white leading-snug">
-                  {selectedNode.title}
-                </h3>
-                <div className="mt-1 flex items-center gap-2">
-                  <span className="font-mono text-[11px] text-zinc-400">
-                    Phase: {selectedNode.phase}
-                  </span>
-                  {selectedNode.type && (
-                    <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-mono text-zinc-300">
-                      {selectedNode.type}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Status & Transitions */}
-              <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-zinc-400 font-medium">Status:</span>
-                  <span
-                    className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${
-                      STATUS_STYLES[selectedNode.status as NodeStatus]
-                        ?.badgeBg || ""
-                    } ${STATUS_STYLES[selectedNode.status as NodeStatus]?.badgeText || ""}`}
-                  >
-                    {STATUS_STYLES[selectedNode.status as NodeStatus]?.label ||
-                      selectedNode.status}
-                  </span>
-                </div>
-
-                {/* Status Changer Buttons */}
-                <div>
-                  <span className="text-[11px] font-mono text-zinc-500 uppercase block mb-1.5">
-                    Update Status
-                  </span>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <button
-                      type="button"
-                      disabled={isUpdatingStatus || selectedNode.is_blocked}
-                      onClick={() =>
-                        handleUpdateNodeStatus(selectedNode.id, "in_progress")
-                      }
-                      className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 font-semibold text-amber-300 hover:bg-amber-500/20 disabled:opacity-40 transition-colors"
-                    >
-                      Start Task
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isUpdatingStatus || selectedNode.is_blocked}
-                      onClick={() =>
-                        handleUpdateNodeStatus(selectedNode.id, "completed")
-                      }
-                      className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-2 py-1.5 font-semibold text-cyan-300 hover:bg-cyan-500/20 disabled:opacity-40 transition-colors"
-                    >
-                      Mark Complete
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isUpdatingStatus}
-                      onClick={() =>
-                        handleUpdateNodeStatus(selectedNode.id, "committed")
-                      }
-                      className="rounded-lg border border-violet-500/30 bg-violet-500/10 px-2 py-1.5 font-semibold text-violet-300 hover:bg-violet-500/20 disabled:opacity-40 transition-colors"
-                    >
-                      Commit
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isUpdatingStatus}
-                      onClick={() =>
-                        handleUpdateNodeStatus(selectedNode.id, "ready")
-                      }
-                      className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-1.5 font-semibold text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors"
-                    >
-                      Mark Ready
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Blocked by Banner */}
-              {selectedNode.is_blocked &&
-                selectedNode.blocked_by &&
-                selectedNode.blocked_by.length > 0 && (
-                  <div className="rounded-xl border border-rose-500/40 bg-rose-950/20 p-3">
-                    <div className="flex items-center gap-1.5 text-rose-300 font-semibold mb-2">
-                      <span className="h-2 w-2 rounded-full bg-rose-400" />
-                      <span>
-                        Blocked by {selectedNode.blocked_by.length}{" "}
-                        prerequisite(s):
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {selectedNode.blocked_by.map((key) => (
-                        <button
-                          key={key}
-                          type="button"
-                          onClick={() => selectNodeByKey(key)}
-                          className="rounded bg-rose-500/20 hover:bg-rose-500/30 px-2 py-0.5 font-mono text-[11px] text-rose-200 transition-colors border border-rose-500/30"
-                        >
-                          {key} →
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-              {/* Explanation */}
-              {selectedNode.explanation && (
-                <div>
-                  <span className="font-mono text-zinc-500 text-[10px] uppercase font-bold block mb-1">
-                    Explanation
-                  </span>
-                  <p className="text-zinc-300 leading-relaxed bg-zinc-950/40 p-2.5 rounded-lg border border-zinc-800">
-                    {selectedNode.explanation}
-                  </p>
-                </div>
-              )}
-
-              {/* Dependencies (All prerequisites) */}
-              {selectedNode.dependencies &&
-                selectedNode.dependencies.length > 0 && (
-                  <div>
-                    <span className="font-mono text-zinc-500 text-[10px] uppercase font-bold block mb-1.5">
-                      Prerequisites ({selectedNode.dependencies.length})
-                    </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {selectedNode.dependencies.map((dep) => (
-                        <button
-                          key={dep}
-                          type="button"
-                          onClick={() => selectNodeByKey(dep)}
-                          className="rounded bg-zinc-800 hover:bg-indigo-950/40 hover:border-indigo-500/40 px-2 py-1 font-mono text-[11px] text-zinc-300 border border-zinc-700 transition-colors"
-                        >
-                          {dep} →
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-              {/* Files */}
-              {selectedNode.files && selectedNode.files.length > 0 && (
-                <div>
-                  <span className="font-mono text-zinc-500 text-[10px] uppercase font-bold block mb-1.5">
-                    Target Files ({selectedNode.files.length})
-                  </span>
-                  <div className="space-y-1 font-mono text-[11px]">
-                    {selectedNode.files.map((file, idx) => (
-                      <div
-                        key={idx}
-                        className="truncate rounded bg-zinc-950/80 px-2.5 py-1 text-zinc-300 border border-zinc-800"
-                        title={file}
-                      >
-                        {file}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Acceptance Criteria */}
-              {selectedNode.acceptance &&
-                selectedNode.acceptance.length > 0 && (
-                  <div>
-                    <span className="font-mono text-zinc-500 text-[10px] uppercase font-bold block mb-1.5">
-                      Acceptance Criteria
-                    </span>
-                    <ul className="space-y-1.5">
-                      {selectedNode.acceptance.map((crit, idx) => (
-                        <li
-                          key={idx}
-                          className="flex items-start gap-2 rounded bg-zinc-950/40 p-2 text-zinc-300 border border-zinc-800/80"
-                        >
-                          <span className="mt-0.5 text-indigo-400">✓</span>
-                          <span>{crit}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-              {/* Tests */}
-              {selectedNode.tests && selectedNode.tests.length > 0 && (
-                <div>
-                  <span className="font-mono text-zinc-500 text-[10px] uppercase font-bold block mb-1.5">
-                    Test Verifications
-                  </span>
-                  <div className="space-y-1 font-mono text-[11px]">
-                    {selectedNode.tests.map((test, idx) => (
-                      <div
-                        key={idx}
-                        className="rounded bg-zinc-950/80 px-2.5 py-1 text-zinc-400 border border-zinc-800"
-                      >
-                        $ {test}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Prompt Preview */}
-              {selectedNode.prompt && (
-                <div>
-                  <span className="font-mono text-zinc-500 text-[10px] uppercase font-bold block mb-1">
-                    AI Prompt
-                  </span>
-                  <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded bg-zinc-950 p-2.5 font-mono text-[10px] text-zinc-400 border border-zinc-800">
-                    {selectedNode.prompt}
-                  </pre>
-                </div>
-              )}
-            </div>
-          </aside>
-        )}
+        <NodePanel
+          node={selectedNode}
+          isOpen={inspectorOpen}
+          onClose={() => setInspectorOpen(false)}
+          onSelectNodeByKey={selectNodeByKey}
+          onUpdateStatus={handleUpdateNodeStatus}
+          isUpdatingStatus={isUpdatingStatus}
+          allNodes={graphData?.nodes || []}
+        />
       </div>
     </div>
   );
