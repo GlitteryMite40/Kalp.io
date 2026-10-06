@@ -189,6 +189,20 @@ export async function createProject(
   return response.data;
 }
 
+export async function deleteProject(
+  projectId: string,
+  options?: ApiRequestOptions,
+) {
+  return apiRequest<{
+    success: true;
+    message?: string;
+    id: string;
+  }>(`/api/projects/${encodeURIComponent(projectId)}`, {
+    method: "DELETE",
+    ...options,
+  });
+}
+
 export async function getProjectGraph(
   projectId: string,
   options?: ApiRequestOptions,
@@ -272,6 +286,7 @@ export const api = {
   request: apiRequest,
   listProjects,
   createProject,
+  deleteProject,
   getProjectGraph,
   runNextProjectStage,
   getNode,

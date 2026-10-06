@@ -36,6 +36,9 @@ export default function Navbar() {
         </div>
 
         <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-zinc-400">
+          <Link href="/projects" className="hover:text-white transition-colors">
+            Projects
+          </Link>
           <a
             href="#graph-preview"
             className="hover:text-white transition-colors"

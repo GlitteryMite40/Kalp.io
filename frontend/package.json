@@ -14,7 +14,8 @@
     "test:panel": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-node-panel.mjs",
     "test:prompt": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-copy-prompt.mjs",
     "test:status": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-status-controls.mjs",
-    "test": "npm run test:api && npm run test:input && npm run test:graph && npm run test:panel && npm run test:prompt && npm run test:status",
+    "test:projects-list": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/test-projects-list.mjs",
+    "test": "npm run test:api && npm run test:input && npm run test:graph && npm run test:panel && npm run test:prompt && npm run test:status && npm run test:projects-list",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
