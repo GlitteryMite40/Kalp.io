@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
+import GraphPreview from "@/components/GraphPreview";
 import FeaturesGrid from "@/components/FeaturesGrid";
 import Footer from "@/components/Footer";
 import {
@@ -391,7 +392,10 @@ export default function Home() {
 
         {/* 1. IDLE STATE: Hero & Input Form */}
         {pipelineState === "idle" && (
-          <section className="relative overflow-hidden pt-12 pb-20 md:pt-20 md:pb-28">
+          <section
+            id="build-graph"
+            className="relative overflow-hidden pt-12 pb-20 md:pt-20 md:pb-28 scroll-mt-16"
+          >
             <div
               className="pointer-events-none absolute -top-40 left-1/2 -z-10 -translate-x-1/2 blur-3xl"
               aria-hidden="true"
@@ -421,7 +425,10 @@ export default function Home() {
               </p>
 
               {/* Form Box */}
-              <div className="mt-10 rounded-2xl border border-zinc-800 bg-zinc-900/90 p-4 sm:p-6 shadow-2xl backdrop-blur-xl text-left">
+              <div
+                id="try-demo"
+                className="mt-10 rounded-2xl border border-zinc-800 bg-zinc-900/90 p-4 sm:p-6 shadow-2xl backdrop-blur-xl text-left scroll-mt-24"
+              >
                 <form onSubmit={handleSubmit}>
                   <div className="flex items-center justify-between mb-2">
                     <label
@@ -798,7 +805,11 @@ export default function Home() {
 
         {/* 3. COMPLETED STATE: Generated Build Graph Display */}
         {pipelineState === "completed" && graphData && (
-          <section className="py-12 md:py-16">
+          <section
+            id="build-graph"
+            className="py-12 md:py-16 scroll-mt-16"
+          >
+            <div id="graph-preview" className="sr-only" />
             <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
               {/* Project Header Banner */}
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6 backdrop-blur-xl mb-8">
@@ -1113,12 +1124,13 @@ export default function Home() {
         {/* Features & Architecture sections when idle */}
         {pipelineState === "idle" && (
           <>
+            <GraphPreview />
             <FeaturesGrid />
 
             {/* Architecture Section */}
             <section
               id="architecture"
-              className="py-20 md:py-28 border-t border-zinc-900 bg-zinc-950/60"
+              className="py-20 md:py-28 border-t border-zinc-900 bg-zinc-950/60 scroll-mt-16"
             >
               <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
                 <div className="text-center max-w-3xl mx-auto">

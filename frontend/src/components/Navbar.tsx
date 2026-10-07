@@ -1,6 +1,28 @@
+"use client";
+
 import Link from "next/link";
 
 export default function Navbar() {
+  const handleAnchorClick = (
+    e: React.MouseEvent<HTMLAnchorElement>,
+    targetId: string,
+  ) => {
+    if (typeof window !== "undefined" && window.location.pathname === "/") {
+      e.preventDefault();
+      const el = document.getElementById(targetId);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth" });
+        window.history.pushState(null, "", `#${targetId}`);
+        if (targetId === "try-demo" || targetId === "build-graph") {
+          const input = document.getElementById("idea-input");
+          if (input) {
+            setTimeout(() => input.focus(), 350);
+          }
+        }
+      }
+    }
+  };
+
   return (
     <header className="sticky top-0 z-50 w-full border-b border-zinc-800/80 bg-zinc-950/75 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
@@ -39,21 +61,27 @@ export default function Navbar() {
           <Link href="/projects" className="hover:text-white transition-colors">
             Projects
           </Link>
-          <a
-            href="#graph-preview"
+          <Link
+            href="/#graph-preview"
+            onClick={(e) => handleAnchorClick(e, "graph-preview")}
             className="hover:text-white transition-colors"
           >
             Build Graph
-          </a>
-          <a href="#features" className="hover:text-white transition-colors">
+          </Link>
+          <Link
+            href="/#features"
+            onClick={(e) => handleAnchorClick(e, "features")}
+            className="hover:text-white transition-colors"
+          >
             Features
-          </a>
-          <a
-            href="#architecture"
+          </Link>
+          <Link
+            href="/#architecture"
+            onClick={(e) => handleAnchorClick(e, "architecture")}
             className="hover:text-white transition-colors"
           >
             Architecture
-          </a>
+          </Link>
           <a
             href="https://github.com/GlitteryMite40/Kalp.io"
             target="_blank"
@@ -78,12 +106,13 @@ export default function Navbar() {
         </nav>
 
         <div className="flex items-center gap-3">
-          <a
-            href="#try-demo"
+          <Link
+            href="/#try-demo"
+            onClick={(e) => handleAnchorClick(e, "try-demo")}
             className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-indigo-500 to-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-indigo-500/25 hover:from-indigo-400 hover:to-violet-500 transition-all active:scale-[0.98]"
           >
             Start Building
-          </a>
+          </Link>
         </div>
       </div>
     </header>

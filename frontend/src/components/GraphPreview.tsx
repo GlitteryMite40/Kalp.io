@@ -157,7 +157,7 @@ export default function GraphPreview() {
   return (
     <section
       id="graph-preview"
-      className="py-16 md:py-24 border-t border-zinc-900 bg-zinc-950/40"
+      className="py-16 md:py-24 border-t border-zinc-900 bg-zinc-950/40 scroll-mt-16"
     >
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
@@ -174,7 +174,25 @@ export default function GraphPreview() {
             </p>
           </div>
 
-          <div className="flex items-center gap-3 text-xs text-zinc-400 bg-zinc-900/80 p-2 rounded-xl border border-zinc-800">
+          <div className="flex flex-wrap items-center gap-3">
+            <a
+              href="#try-demo"
+              onClick={(e) => {
+                e.preventDefault();
+                const target = document.getElementById("try-demo");
+                if (target) {
+                  target.scrollIntoView({ behavior: "smooth" });
+                  const input = document.getElementById("idea-input");
+                  if (input) {
+                    setTimeout(() => input.focus(), 350);
+                  }
+                }
+              }}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-500/30 bg-indigo-600/10 px-3.5 py-2 text-xs font-semibold text-indigo-300 hover:bg-indigo-600/20 hover:border-indigo-500/50 transition-all active:scale-95"
+            >
+              <span>Build Your Own Graph ↑</span>
+            </a>
+            <div className="flex items-center gap-3 text-xs text-zinc-400 bg-zinc-900/80 p-2 rounded-xl border border-zinc-800">
             <span className="flex items-center gap-1.5">
               <span
                 className={`h-2 w-2 rounded-full ${STATUS_CONFIG.ready.dot}`}
@@ -195,6 +213,7 @@ export default function GraphPreview() {
             </span>
           </div>
         </div>
+      </div>
 
         {/* Visual Graph Canvas Mockup */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">

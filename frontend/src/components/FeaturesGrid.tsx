@@ -87,7 +87,7 @@ export default function FeaturesGrid() {
   ];
 
   return (
-    <section id="features" className="py-20 md:py-28">
+    <section id="features" className="py-20 md:py-28 scroll-mt-16">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="text-center max-w-3xl mx-auto">
           <span className="text-xs font-semibold uppercase tracking-wider text-indigo-400">
