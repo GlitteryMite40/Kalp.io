@@ -12,7 +12,7 @@ export default defineConfig({
       "src/**/*.test.ts",
       "src/**/*.test.tsx",
     ],
-    exclude: ["node_modules", "e2e/**"],
+    exclude: ["node_modules", "e2e/**", "tests/e2e/**"],
     passWithNoTests: false,
   },
   resolve: {
