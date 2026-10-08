@@ -341,6 +341,14 @@ async function probeCandidate(
         };
       }
 
+      if (response.status === 503) {
+        return {
+          ok: false,
+          status: 503,
+          error: "model overloaded or high demand (HTTP 503)",
+        };
+      }
+
       // 5xx status
       if (response.status >= 500 && attempt < 2) {
         if (opts?.now && opts?.startTime !== undefined) {
@@ -580,7 +588,7 @@ export async function selectModel(
     );
   }
 
-  const probePool = ranked.slice(0, 6);
+  const probePool = ranked.slice(0, 10);
   let selectedModel: string | null = null;
 
   for (let i = 0; i < probePool.length; i++) {
@@ -824,29 +832,29 @@ export async function generateJson<T>(
   const generateOpts = { ...opts, maxOutputTokens };
 
   let currentModel = await selectModel();
+  let response: Awaited<ReturnType<typeof callGeminiGenerate>>;
 
-  let response = await callGeminiGenerate(
-    currentModel,
-    apiKey,
-    prompt,
-    generateOpts,
-  );
-
-  // If finishReason is MAX_TOKENS, throw OUTPUT_TRUNCATED immediately without retry
-  if (response.finishReason === "MAX_TOKENS") {
-    throw new LlmError(
-      "OUTPUT_TRUNCATED",
-      "Model output was truncated because it reached maxOutputTokens limit. Raise maxOutputTokens to allow longer output.",
+  while (true) {
+    response = await callGeminiGenerate(
+      currentModel,
+      apiKey,
+      prompt,
+      generateOpts,
     );
-  }
 
-  // If candidate returns 429, 404, or 403, fallback to next best model once (unless pinned)
-  if (
-    !response.ok &&
-    (response.status === 429 ||
-      response.status === 404 ||
-      response.status === 403)
-  ) {
+    // If finishReason is MAX_TOKENS, throw OUTPUT_TRUNCATED immediately without retry
+    if (response.finishReason === "MAX_TOKENS") {
+      throw new LlmError(
+        "OUTPUT_TRUNCATED",
+        "Model output was truncated because it reached maxOutputTokens limit. Raise maxOutputTokens to allow longer output.",
+      );
+    }
+
+    if (response.ok && response.text) {
+      break;
+    }
+
+    // Candidate failed. If pinned, do not fallback to other models.
     if (pinned) {
       if (response.status === 429) {
         throw new LlmError(
@@ -862,49 +870,38 @@ export async function generateJson<T>(
       );
     }
 
+    if (response.status === 401) {
+      throw new LlmError(
+        "API_KEY_INVALID",
+        "Gemini API key is invalid or unauthorized",
+        401,
+      );
+    }
+
     excludedModels.push(currentModel);
-    currentModel = await selectModel({
-      force: true,
-      internal: true,
-      exclude: excludedModels,
-      runtimeFailureStatus: response.status,
-    });
-    response = await callGeminiGenerate(
-      currentModel,
-      apiKey,
-      prompt,
-      generateOpts,
-    );
 
-    if (response.finishReason === "MAX_TOKENS") {
+    try {
+      currentModel = await selectModel({
+        force: true,
+        internal: true,
+        exclude: excludedModels,
+        runtimeFailureStatus: response.status,
+      });
+    } catch {
+      // Fallback selection failed or exhausted all available models
+      if (response.status === 429) {
+        throw new LlmError(
+          "RATE_LIMITED",
+          "Gemini API rate limited or quota exceeded",
+          429,
+        );
+      }
       throw new LlmError(
-        "OUTPUT_TRUNCATED",
-        "Model output was truncated because it reached maxOutputTokens limit. Raise maxOutputTokens to allow longer output.",
+        "NO_MODEL_AVAILABLE",
+        `Gemini request failed: ${response.error || "No content returned"}`,
+        response.status,
       );
     }
-
-    if (!response.ok && response.status === 429) {
-      throw new LlmError(
-        "RATE_LIMITED",
-        "Gemini API rate limited or quota exceeded",
-        429,
-      );
-    }
-  }
-
-  if (!response.ok || !response.text) {
-    if (response.status === 429) {
-      throw new LlmError(
-        "RATE_LIMITED",
-        "Gemini API rate limited or quota exceeded",
-        429,
-      );
-    }
-    throw new LlmError(
-      "NO_MODEL_AVAILABLE",
-      `Gemini request failed: ${response.error || "No content returned"}`,
-      response.status,
-    );
   }
 
   // Parse JSON with single retry on parse or schema validation error
