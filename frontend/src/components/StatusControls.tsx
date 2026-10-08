@@ -17,6 +17,7 @@ export interface StatusControlsProps {
   isUpdating?: boolean;
   onSelectNodeByKey?: (nodeKey: string) => void;
   hasCommit?: boolean;
+  isLearningResolved?: boolean;
   onTakeCheck?: () => void;
   className?: string;
 }
@@ -27,6 +28,7 @@ export default function StatusControls({
   isUpdating = false,
   onSelectNodeByKey,
   hasCommit = false,
+  isLearningResolved,
   onTakeCheck,
   className = "",
 }: StatusControlsProps) {
@@ -42,9 +44,24 @@ export default function StatusControls({
   const statusCfg = STATUS_STYLES[currentStatus] || STATUS_STYLES.not_started;
   const isBlocked = isNodeBlocked(node);
   const isReady = isNodeReady(node);
+  const isResolved =
+    isLearningResolved !== undefined
+      ? isLearningResolved
+      : currentStatus === "completed";
 
   const handleActionClick = async (targetStatus: NodeStatus) => {
     setErrorMessage(null);
+
+    // Defensive check: if target is completed and learning check is not resolved, block
+    if (targetStatus === "completed" && !isResolved) {
+      setErrorMessage(
+        "Cannot mark completed: you must pass or skip the understanding check below before completing this step.",
+      );
+      if (onTakeCheck) {
+        onTakeCheck();
+      }
+      return;
+    }
 
     // Defensive check: if blocked, do not allow starting
     const check = canTransitionToStatus(node, targetStatus);
@@ -152,7 +169,7 @@ export default function StatusControls({
               const isCurrent = currentStatus === action.status;
               const isTakeCheck =
                 action.status === "completed" &&
-                (currentStatus === "committed" || hasCommit);
+                (currentStatus === "committed" || hasCommit || !isResolved);
 
               const disabled =
                 isUpdating ||
@@ -170,15 +187,20 @@ export default function StatusControls({
 
               const handleClick = () => {
                 if (isTakeCheck) {
+                  setErrorMessage(
+                    "You must pass or skip the understanding check below before this step can be marked completed and unlock dependent tasks.",
+                  );
                   if (onTakeCheck) {
                     onTakeCheck();
                   } else if (typeof document !== "undefined") {
-                    const el = document.getElementById(
-                      "learning-check-section",
-                    );
+                    const el =
+                      document.getElementById("learning-check-section") ||
+                      document.getElementById("learning-check-card");
                     el?.scrollIntoView({ behavior: "smooth" });
                     (
-                      el?.querySelector("button, input") as HTMLElement | null
+                      el?.querySelector(
+                        "button:not(:disabled), input",
+                      ) as HTMLElement | null
                     )?.focus();
                   }
                   return;

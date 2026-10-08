@@ -17,6 +17,7 @@ import {
 export interface LearningCheckProps {
   node: ComputedNode;
   onNodeCompleted?: (nodeId: string) => void;
+  onLearningStateChange?: (resolved: boolean) => void;
   className?: string;
   initialLearnData?: NodeLearnData | null;
   initialLoading?: boolean;
@@ -35,6 +36,7 @@ const SOURCE_LABELS: Record<DiffSource, string> = {
 export default function LearningCheck({
   node,
   onNodeCompleted,
+  onLearningStateChange,
   className = "",
   initialLearnData,
   initialLoading,
@@ -62,6 +64,17 @@ export default function LearningCheck({
   const [justCompleted, setJustCompleted] = useState<boolean>(
     initialJustCompleted ?? false,
   );
+
+  useEffect(() => {
+    const isResolved = Boolean(
+      learnData?.answer_state?.resolved ||
+      learnData?.answer_state?.result === "correct" ||
+      learnData?.answer_state?.result === "skipped" ||
+      justCompleted ||
+      node.status === "completed",
+    );
+    onLearningStateChange?.(isResolved);
+  }, [learnData, justCompleted, node.status, onLearningStateChange]);
 
   // Fetch initial learning state
   const fetchState = useCallback(async () => {

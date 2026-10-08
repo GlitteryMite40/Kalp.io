@@ -152,6 +152,11 @@ export default function ProjectGraphPage({ params }: PageProps) {
         <div className="flex items-center gap-3 min-w-0">
           <Link
             href="/"
+            onClick={() => {
+              if (typeof window !== "undefined") {
+                localStorage.removeItem("kalp_active_project_id");
+              }
+            }}
             className="flex items-center gap-2 group hover:opacity-90 transition-opacity"
             title="Return to Home"
           >
@@ -176,6 +181,16 @@ export default function ProjectGraphPage({ params }: PageProps) {
             <span className="hidden sm:inline font-bold tracking-tight text-white text-sm">
               Kalp<span className="text-indigo-400">.io</span>
             </span>
+          </Link>
+
+          <span className="text-zinc-600">/</span>
+
+          <Link
+            href="/projects"
+            className="text-xs font-medium text-zinc-400 hover:text-white transition-colors shrink-0"
+            title="All Projects"
+          >
+            Projects
           </Link>
 
           <span className="text-zinc-600">/</span>
@@ -329,6 +344,11 @@ export default function ProjectGraphPage({ params }: PageProps) {
                 </button>
                 <Link
                   href="/"
+                  onClick={() => {
+                    if (typeof window !== "undefined") {
+                      localStorage.removeItem("kalp_active_project_id");
+                    }
+                  }}
                   className="rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-2 text-xs font-semibold text-zinc-300 hover:text-white transition-colors"
                 >
                   Return to Home

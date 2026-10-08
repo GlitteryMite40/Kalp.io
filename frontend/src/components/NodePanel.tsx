@@ -34,10 +34,18 @@ export default function NodePanel({
 }: NodePanelProps) {
   const [copiedFile, setCopiedFile] = useState<string | null>(null);
   const [copiedTest, setCopiedTest] = useState<string | null>(null);
+  const [manualResolvedNodeId, setManualResolvedNodeId] = useState<
+    string | null
+  >(null);
+  const [isManuallyResolved, setIsManuallyResolved] = useState<boolean>(false);
 
   if (!isOpen || !node) {
     return null;
   }
+
+  const isLearningResolved =
+    node.status === "completed" ||
+    (manualResolvedNodeId === node.id && isManuallyResolved);
 
   const typeKey = (node.type || "").toLowerCase();
   const typeCfg = TYPE_STYLES[typeKey] || {
@@ -159,11 +167,18 @@ export default function NodePanel({
             isUpdating={isUpdatingStatus}
             onSelectNodeByKey={onSelectNodeByKey}
             hasCommit={node.status === "committed"}
+            isLearningResolved={isLearningResolved}
             onTakeCheck={() => {
-              const el = document.getElementById("learning-check-card");
+              const el =
+                document.getElementById("learning-check-section") ||
+                document.getElementById("learning-check-card");
               if (el) {
                 el.scrollIntoView({ behavior: "smooth", block: "start" });
-                el.focus?.();
+                (
+                  el.querySelector(
+                    "button:not(:disabled), input",
+                  ) as HTMLElement | null
+                )?.focus();
               }
             }}
           />
@@ -181,6 +196,10 @@ export default function NodePanel({
         {/* Learning Check Layer */}
         <LearningCheck
           node={node}
+          onLearningStateChange={(resolved) => {
+            setManualResolvedNodeId(node.id);
+            setIsManuallyResolved(resolved);
+          }}
           onNodeCompleted={(id) => {
             void onUpdateStatus?.(id, "completed");
             onRefreshGraph?.();

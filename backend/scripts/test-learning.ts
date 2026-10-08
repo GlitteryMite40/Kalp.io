@@ -39,6 +39,7 @@ import {
 import { GET as getLearn } from "../src/app/api/nodes/[id]/learn/route";
 import { POST as postGenerate } from "../src/app/api/nodes/[id]/learn/generate/route";
 import { POST as postAnswer } from "../src/app/api/nodes/[id]/answer/route";
+import { PATCH as patchNode } from "../src/app/api/nodes/[id]/route";
 import {
   OWNER_COOKIE_NAME,
   OWNER_HEADER_NAME,
@@ -545,6 +546,29 @@ async function runDbChecks() {
     check(
       "Wrong answer leaves node status 'committed'",
       dbNode1AfterWrong?.status === "committed",
+    );
+
+    // 2.6b Direct PATCH status: 'completed' is strictly rejected when learning check not passed
+    const reqDirectComplete = new NextRequest(
+      `http://localhost:3000/api/nodes/${node1Id}`,
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          [OWNER_HEADER_NAME]: ownerA,
+          cookie: `${OWNER_COOKIE_NAME}=${ownerA}`,
+        },
+        body: JSON.stringify({ status: "completed" }),
+      },
+    );
+    const resDirectComplete = await patchNode(reqDirectComplete, {
+      params: Promise.resolve({ id: node1Id }),
+    });
+    const bodyDirectComplete = await resDirectComplete.json();
+    check(
+      "Direct PATCH to completed is strictly rejected before learning check is passed (HTTP 400 LEARNING_CHECK_REQUIRED)",
+      resDirectComplete.status === 400 &&
+        bodyDirectComplete.error?.code === "LEARNING_CHECK_REQUIRED",
     );
 
     // 2.7 Second wrong answer reveals explanation

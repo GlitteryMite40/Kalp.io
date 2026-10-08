@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { getOwnerId, updateNodeForOwner } from "@/server/session";
 import { getNodeBlockedState } from "@/server/graph";
 import {
+  getLatestCommitForNode,
+  getNodeLearningRecord,
+  getNodeAnswerStats,
+} from "@/server/learning";
+import {
   ALL_NODE_STATUSES,
   DB_NODE_STATUSES,
   type NodeStatus,
@@ -131,6 +136,34 @@ export async function PATCH(
           },
           { status: 400 },
         );
+      }
+    }
+
+    // 5.5 Reject completing a node that has not passed the learning check if a commit or learning exists
+    if (targetStatus === "completed" && node.status !== "completed") {
+      const latestCommit = await getLatestCommitForNode(node.id);
+      const learning = await getNodeLearningRecord(node.id);
+      if (latestCommit || learning) {
+        const answerStats = await getNodeAnswerStats(node.id);
+        if (!answerStats.resolved) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: {
+                code: "LEARNING_CHECK_REQUIRED",
+                message: `Cannot mark node "${node.node_key}" as completed until the understanding check is passed or skipped.`,
+                details: {
+                  node_id: node.id,
+                  node_key: node.node_key,
+                  has_commit: Boolean(latestCommit),
+                  has_learning: Boolean(learning),
+                  wrong_count: answerStats.wrongCount,
+                },
+              },
+            },
+            { status: 400 },
+          );
+        }
       }
     }
 

@@ -240,20 +240,75 @@ export default function Home() {
     }
   };
 
-  // Resume active project on page load or refresh
+  const handleStartNewProject = () => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("kalp_active_project_id");
+      const url = new URL(window.location.href);
+      url.searchParams.delete("projectId");
+      window.history.replaceState(null, "", url.pathname);
+    }
+    setProjectId(null);
+    setPipelineState("idle");
+    setGraphData(null);
+    setSelectedNode(null);
+    setCompletedStages([]);
+    setCurrentStage(null);
+    setIdea("");
+    setUploadedFileName(null);
+    setValidationError(null);
+    setFileError(null);
+    setApiError(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  // Resume active project on explicit URL search param or handle hash / home navigation
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     const urlParams = new URLSearchParams(window.location.search);
     const paramProjectId = urlParams.get("projectId");
-    const storedProjectId =
-      paramProjectId || localStorage.getItem("kalp_active_project_id");
 
-    if (storedProjectId) {
+    // Only auto-resume if explicitly passed in URL query param
+    if (paramProjectId) {
       Promise.resolve().then(() => {
-        void resumeProject(storedProjectId);
+        void resumeProject(paramProjectId);
       });
     }
+
+    const scrollToHash = () => {
+      const hash = window.location.hash.replace("#", "");
+      if (hash) {
+        setTimeout(() => {
+          const el = document.getElementById(hash);
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth" });
+            if (hash === "try-demo" || hash === "build-graph") {
+              document.getElementById("idea-input")?.focus();
+            }
+          }
+        }, 150);
+      }
+    };
+
+    scrollToHash();
+    window.addEventListener("hashchange", scrollToHash);
+
+    const onNavHome = () => {
+      handleStartNewProject();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      setTimeout(() => {
+        document.getElementById("idea-input")?.focus();
+      }, 100);
+    };
+
+    window.addEventListener("kalp:navigate-home", onNavHome);
+
+    return () => {
+      window.removeEventListener("hashchange", scrollToHash);
+      window.removeEventListener("kalp:navigate-home", onNavHome);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -327,29 +382,6 @@ export default function Home() {
             : "Failed to create project.";
       setApiError(message);
       setPipelineState("idle");
-    }
-  };
-
-  const handleStartNewProject = () => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("kalp_active_project_id");
-      const url = new URL(window.location.href);
-      url.searchParams.delete("projectId");
-      window.history.replaceState(null, "", url.pathname);
-    }
-    setProjectId(null);
-    setPipelineState("idle");
-    setGraphData(null);
-    setSelectedNode(null);
-    setCompletedStages([]);
-    setCurrentStage(null);
-    setIdea("");
-    setUploadedFileName(null);
-    setValidationError(null);
-    setFileError(null);
-    setApiError(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
     }
   };
 

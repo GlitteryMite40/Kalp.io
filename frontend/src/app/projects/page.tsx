@@ -126,6 +126,11 @@ export default function ProjectsPage() {
           <div className="flex items-center gap-3">
             <Link
               href="/"
+              onClick={() => {
+                if (typeof window !== "undefined") {
+                  localStorage.removeItem("kalp_active_project_id");
+                }
+              }}
               className="flex items-center gap-2 text-white font-bold tracking-tight text-lg group"
             >
               <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center text-white text-sm shadow-md shadow-indigo-500/20 group-hover:scale-105 transition-transform">
@@ -142,6 +147,11 @@ export default function ProjectsPage() {
           <Link
             href="/"
             data-testid="create-project-nav-btn"
+            onClick={() => {
+              if (typeof window !== "undefined") {
+                localStorage.removeItem("kalp_active_project_id");
+              }
+            }}
             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm shadow-indigo-600/20 transition-all active:scale-95"
           >
             <span>+</span>
@@ -229,6 +239,11 @@ export default function ProjectsPage() {
               <Link
                 href="/"
                 data-testid="empty-create-btn"
+                onClick={() => {
+                  if (typeof window !== "undefined") {
+                    localStorage.removeItem("kalp_active_project_id");
+                  }
+                }}
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/25 transition-all"
               >
                 <span>+</span>

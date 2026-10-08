@@ -7,19 +7,34 @@ export default function Navbar() {
     e: React.MouseEvent<HTMLAnchorElement>,
     targetId: string,
   ) => {
-    if (typeof window !== "undefined" && window.location.pathname === "/") {
-      e.preventDefault();
-      const el = document.getElementById(targetId);
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth" });
-        window.history.pushState(null, "", `#${targetId}`);
-        if (targetId === "try-demo" || targetId === "build-graph") {
-          const input = document.getElementById("idea-input");
-          if (input) {
-            setTimeout(() => input.focus(), 350);
+    if (typeof window !== "undefined") {
+      if (window.location.pathname === "/") {
+        const el = document.getElementById(targetId);
+        if (el) {
+          e.preventDefault();
+          el.scrollIntoView({ behavior: "smooth" });
+          window.history.pushState(null, "", `#${targetId}`);
+          if (targetId === "try-demo" || targetId === "build-graph") {
+            const input = document.getElementById("idea-input");
+            if (input) {
+              setTimeout(() => input.focus(), 350);
+            }
           }
+        } else {
+          // If element not in DOM (e.g. pipeline running/completed), reset home
+          window.dispatchEvent(new CustomEvent("kalp:navigate-home"));
         }
+      } else {
+        // Navigating from another route (/projects, /p/:id)
+        localStorage.removeItem("kalp_active_project_id");
       }
+    }
+  };
+
+  const handleHomeClick = () => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("kalp_active_project_id");
+      window.dispatchEvent(new CustomEvent("kalp:navigate-home"));
     }
   };
 
@@ -27,7 +42,11 @@ export default function Navbar() {
     <header className="sticky top-0 z-50 w-full border-b border-zinc-800/80 bg-zinc-950/75 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         <div className="flex items-center gap-3">
-          <Link href="/" className="flex items-center gap-2 group">
+          <Link
+            href="/"
+            onClick={handleHomeClick}
+            className="flex items-center gap-2 group"
+          >
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-600 via-violet-600 to-cyan-400 p-[1px] shadow-lg shadow-indigo-500/20 group-hover:shadow-indigo-500/40 transition-shadow">
               <div className="flex h-full w-full items-center justify-center rounded-[11px] bg-zinc-950">
                 <svg
