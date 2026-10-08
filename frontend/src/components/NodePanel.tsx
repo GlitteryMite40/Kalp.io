@@ -6,6 +6,7 @@ import { STATUS_STYLES, TYPE_STYLES } from "@/lib/graph";
 import CopyPrompt from "@/components/CopyPrompt";
 import StatusControls from "@/components/StatusControls";
 import ExportMenu from "@/components/ExportMenu";
+import LearningCheck from "@/components/LearningCheck";
 import { formatNodePromptFallback } from "@/lib/clipboard";
 
 export interface NodePanelProps {
@@ -17,6 +18,7 @@ export interface NodePanelProps {
   isUpdatingStatus?: boolean;
   allNodes?: ComputedNode[];
   className?: string;
+  onRefreshGraph?: () => void;
 }
 
 export default function NodePanel({
@@ -28,6 +30,7 @@ export default function NodePanel({
   isUpdatingStatus = false,
   allNodes = [],
   className = "",
+  onRefreshGraph,
 }: NodePanelProps) {
   const [copiedFile, setCopiedFile] = useState<string | null>(null);
   const [copiedTest, setCopiedTest] = useState<string | null>(null);
@@ -124,29 +127,10 @@ export default function NodePanel({
           </h3>
         </div>
 
-        {/* 3. Status Section */}
-        <div data-testid="node-panel-status">
-          <StatusControls
-            node={node}
-            onUpdateStatus={onUpdateStatus}
-            isUpdating={isUpdatingStatus}
-            onSelectNodeByKey={onSelectNodeByKey}
-          />
-          {node.is_blocked && (
-            <div
-              data-testid="node-panel-blocked-banner"
-              className="sr-only"
-              aria-hidden="true"
-            >
-              Blocked node
-            </div>
-          )}
-        </div>
-
-        {/* 4. Purpose Section */}
+        {/* What you are building and why */}
         <div data-testid="node-panel-purpose">
           <span className="font-mono text-zinc-500 text-[10px] uppercase font-bold block mb-1.5">
-            Purpose
+            What you are building and why
           </span>
           <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 leading-relaxed text-zinc-300">
             {node.explanation ? (
@@ -166,6 +150,42 @@ export default function NodePanel({
             )}
           </div>
         </div>
+
+        {/* Status Section */}
+        <div data-testid="node-panel-status">
+          <StatusControls
+            node={node}
+            onUpdateStatus={onUpdateStatus}
+            isUpdating={isUpdatingStatus}
+            onSelectNodeByKey={onSelectNodeByKey}
+            hasCommit={node.status === "committed"}
+            onTakeCheck={() => {
+              const el = document.getElementById("learning-check-card");
+              if (el) {
+                el.scrollIntoView({ behavior: "smooth", block: "start" });
+                el.focus?.();
+              }
+            }}
+          />
+          {node.is_blocked && (
+            <div
+              data-testid="node-panel-blocked-banner"
+              className="sr-only"
+              aria-hidden="true"
+            >
+              Blocked node
+            </div>
+          )}
+        </div>
+
+        {/* Learning Check Layer */}
+        <LearningCheck
+          node={node}
+          onNodeCompleted={(id) => {
+            void onUpdateStatus?.(id, "completed");
+            onRefreshGraph?.();
+          }}
+        />
 
         {/* 5. Dependencies Section */}
         <div data-testid="node-panel-dependencies">

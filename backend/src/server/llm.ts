@@ -13,6 +13,11 @@ const MODEL_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const REFRESH_COOLDOWN_MS = 60 * 1000; // 60 seconds
 export const SELECTION_BUDGET_MS = 45000;
 
+declare global {
+  var __kalp_mock_generate_json__:
+    ((prompt: string, opts?: unknown) => Promise<unknown>) | undefined;
+}
+
 export type LlmErrorCode =
   | "API_KEY_MISSING"
   | "API_KEY_INVALID"
@@ -822,6 +827,15 @@ export async function generateJson<T>(
     timeoutMs?: number;
   },
 ): Promise<{ data: T; model: string }> {
+  if (globalThis.__kalp_mock_generate_json__) {
+    return (
+      globalThis.__kalp_mock_generate_json__ as (
+        p: string,
+        o?: unknown,
+      ) => Promise<{ data: T; model: string }>
+    )(prompt, opts);
+  }
+
   const apiKey = getApiKey();
   const pinned = getPinnedModel();
   const excludedModels: string[] = [];

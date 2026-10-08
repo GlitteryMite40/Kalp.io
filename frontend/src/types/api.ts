@@ -221,3 +221,65 @@ export interface DisconnectRepoResponse {
     disconnected: boolean;
   };
 }
+
+export type DiffSource = "patch" | "files_only" | "plan_only";
+
+export interface LearningQuestion {
+  prompt: string;
+  options: string[];
+}
+
+export interface LearningDetails {
+  diff_explanation: string | null;
+  diff_source: DiffSource | null;
+  commit_sha: string | null;
+  stale: boolean;
+  question: LearningQuestion;
+}
+
+export interface AnswerState {
+  wrong_count: number;
+  resolved: boolean;
+  result: "correct" | "skipped" | null;
+  reveal: {
+    correct_index: number;
+    explanation: string;
+  } | null;
+  hint?: string | null;
+}
+
+export interface NodeLearnData {
+  explanation: string | null;
+  has_commit: boolean;
+  commit_sha: string | null;
+  learning: LearningDetails | null;
+  answer_state: AnswerState;
+}
+
+export interface NodeLearnResponse {
+  success: true;
+  data: NodeLearnData;
+  meta?: Record<string, unknown>;
+}
+
+export interface AnswerInput {
+  selected_index?: number;
+  skip?: boolean;
+}
+
+export interface AnswerResultData {
+  result: "correct" | "wrong" | "skipped";
+  completed: boolean;
+  wrong_count: number;
+  explanation?: string;
+  hint?: string;
+  reveal?: {
+    correct_index: number;
+    explanation: string;
+  } | null;
+}
+
+export interface AnswerResponse {
+  success: true;
+  data: AnswerResultData;
+}

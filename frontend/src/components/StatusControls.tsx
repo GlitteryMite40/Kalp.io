@@ -16,6 +16,8 @@ export interface StatusControlsProps {
   onUpdateStatus?: (nodeId: string, status: NodeStatus) => Promise<void> | void;
   isUpdating?: boolean;
   onSelectNodeByKey?: (nodeKey: string) => void;
+  hasCommit?: boolean;
+  onTakeCheck?: () => void;
   className?: string;
 }
 
@@ -24,6 +26,8 @@ export default function StatusControls({
   onUpdateStatus,
   isUpdating = false,
   onSelectNodeByKey,
+  hasCommit = false,
+  onTakeCheck,
   className = "",
 }: StatusControlsProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -146,17 +150,41 @@ export default function StatusControls({
           <div className="grid grid-cols-3 gap-2">
             {STATUS_ACTIONS.map((action) => {
               const isCurrent = currentStatus === action.status;
+              const isTakeCheck =
+                action.status === "completed" &&
+                (currentStatus === "committed" || hasCommit);
+
               const disabled =
                 isUpdating ||
                 (isBlocked &&
                   (action.status === "in_progress" ||
                     action.status === "completed" ||
                     action.status === "failed")) ||
-                isCurrent;
+                (isCurrent && !isTakeCheck);
 
               // Ready node highlight applied specifically to In Progress button
               const isReadyStart =
                 isReady && action.status === "in_progress" && !isCurrent;
+
+              const label = isTakeCheck ? "Take the check" : action.label;
+
+              const handleClick = () => {
+                if (isTakeCheck) {
+                  if (onTakeCheck) {
+                    onTakeCheck();
+                  } else if (typeof document !== "undefined") {
+                    const el = document.getElementById(
+                      "learning-check-section",
+                    );
+                    el?.scrollIntoView({ behavior: "smooth" });
+                    (
+                      el?.querySelector("button, input") as HTMLElement | null
+                    )?.focus();
+                  }
+                  return;
+                }
+                void handleActionClick(action.status);
+              };
 
               return (
                 <button
@@ -165,31 +193,40 @@ export default function StatusControls({
                   data-testid={action.testId}
                   disabled={disabled}
                   aria-disabled={disabled}
-                  onClick={() => handleActionClick(action.status)}
+                  onClick={handleClick}
                   title={
-                    isBlocked
-                      ? `Cannot start: blocked by ${node.blocked_by?.join(", ") || "prerequisites"}`
-                      : isCurrent
-                        ? `Currently ${action.label}`
-                        : action.description
+                    isTakeCheck
+                      ? "Take the understanding check to complete this step"
+                      : isBlocked
+                        ? `Cannot start: blocked by ${node.blocked_by?.join(", ") || "prerequisites"}`
+                        : isCurrent
+                          ? `Currently ${action.label}`
+                          : action.description
                   }
                   className={`relative flex flex-col items-center justify-center p-2 rounded-lg font-semibold text-xs transition-all duration-200 disabled:opacity-35 disabled:cursor-not-allowed ${
-                    isCurrent
-                      ? action.activeColor
-                      : isReadyStart
-                        ? "border-emerald-500/80 bg-emerald-500/20 text-emerald-200 shadow-md shadow-emerald-500/20 ring-1 ring-emerald-400/50 hover:bg-emerald-500/30 animate-pulse"
-                        : action.color
+                    isTakeCheck
+                      ? "border-cyan-500/80 bg-cyan-500/20 text-cyan-200 shadow-md shadow-cyan-500/20 ring-1 ring-cyan-400/50 hover:bg-cyan-500/30"
+                      : isCurrent
+                        ? action.activeColor
+                        : isReadyStart
+                          ? "border-emerald-500/80 bg-emerald-500/20 text-emerald-200 shadow-md shadow-emerald-500/20 ring-1 ring-emerald-400/50 hover:bg-emerald-500/30 animate-pulse"
+                          : action.color
                   }`}
                 >
-                  <span className="text-[11px] leading-tight">
-                    {action.label}
+                  <span className="text-[11px] leading-tight text-center">
+                    {label}
                   </span>
-                  {isReadyStart && (
+                  {isTakeCheck && (
+                    <span className="text-[8px] font-mono text-cyan-300 font-bold uppercase tracking-wider mt-0.5">
+                      Check
+                    </span>
+                  )}
+                  {isReadyStart && !isTakeCheck && (
                     <span className="text-[8px] font-mono text-emerald-300 font-bold uppercase tracking-wider mt-0.5">
                       Ready!
                     </span>
                   )}
-                  {isCurrent && (
+                  {isCurrent && !isTakeCheck && (
                     <span className="text-[8px] font-mono text-zinc-400 font-normal uppercase tracking-wider mt-0.5">
                       Active
                     </span>

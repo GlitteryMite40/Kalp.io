@@ -363,6 +363,7 @@ export default function ProjectGraphPage({ params }: PageProps) {
           onUpdateStatus={handleUpdateNodeStatus}
           isUpdatingStatus={isUpdatingStatus}
           allNodes={graphData?.nodes || []}
+          onRefreshGraph={() => projectId && void fetchGraph(projectId)}
         />
       </div>
     </div>

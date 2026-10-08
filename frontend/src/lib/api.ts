@@ -12,6 +12,11 @@ import type {
   RunProjectResponse,
   UpdateNodeStatusInput,
   UpdateNodeStatusResponse,
+  AnswerInput,
+  AnswerResponse,
+  AnswerResultData,
+  NodeLearnData,
+  NodeLearnResponse,
 } from "../types/api";
 
 export class ApiClientError extends Error {
@@ -328,6 +333,50 @@ export async function pingBackend(options?: ApiRequestOptions) {
   });
 }
 
+export async function getNodeLearn(
+  nodeId: string,
+  options?: ApiRequestOptions,
+): Promise<NodeLearnData> {
+  const res = await apiRequest<NodeLearnResponse>(
+    `/api/nodes/${encodeURIComponent(nodeId)}/learn`,
+    {
+      method: "GET",
+      ...options,
+    },
+  );
+  return res.data;
+}
+
+export async function generateNodeLearn(
+  nodeId: string,
+  options?: ApiRequestOptions,
+): Promise<NodeLearnData> {
+  const res = await apiRequest<NodeLearnResponse>(
+    `/api/nodes/${encodeURIComponent(nodeId)}/learn/generate`,
+    {
+      method: "POST",
+      ...options,
+    },
+  );
+  return res.data;
+}
+
+export async function submitNodeAnswer(
+  nodeId: string,
+  input: AnswerInput,
+  options?: ApiRequestOptions,
+): Promise<AnswerResultData> {
+  const res = await apiRequest<AnswerResponse>(
+    `/api/nodes/${encodeURIComponent(nodeId)}/answer`,
+    {
+      method: "POST",
+      body: input,
+      ...options,
+    },
+  );
+  return res.data;
+}
+
 export const api = {
   request: apiRequest,
   listProjects,
@@ -343,6 +392,9 @@ export const api = {
   getLlmStatus,
   getHealth,
   pingBackend,
+  getNodeLearn,
+  generateNodeLearn,
+  submitNodeAnswer,
 };
 
 export type * from "../types/api";

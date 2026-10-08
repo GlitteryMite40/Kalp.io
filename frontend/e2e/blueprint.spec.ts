@@ -24,26 +24,36 @@ test.describe("Graph Preview - View Step Blueprint Flow", () => {
     await expect(modalTitle).toContainText("LLM Graph Decomposition Engine");
 
     // Verify specification section is visible by default
-    await expect(page.getByText("Purpose & Architecture Context")).toBeVisible();
+    await expect(
+      page.getByText("Purpose & Architecture Context"),
+    ).toBeVisible();
     await expect(page.getByText("Acceptance Criteria")).toBeVisible();
     await expect(page.getByText("Target Files / Modules")).toBeVisible();
 
     // 4. Switch to Agent Prompt (Markdown) tab
-    const promptTab = page.getByRole("button", { name: "Agent Prompt (Markdown)" });
+    const promptTab = page.getByRole("button", {
+      name: "Agent Prompt (Markdown)",
+    });
     await promptTab.click();
 
     // Verify markdown pre block is visible
     const preBlock = modal.locator("pre");
     await expect(preBlock).toBeVisible();
-    await expect(preBlock).toContainText("# TASK: [02.1] LLM Graph Decomposition Engine");
+    await expect(preBlock).toContainText(
+      "# TASK: [02.1] LLM Graph Decomposition Engine",
+    );
 
     // 5. Test Copy Blueprint Prompt button
-    const copyBtn = modal.getByRole("button", { name: /Copy Blueprint Prompt/i });
+    const copyBtn = modal.getByRole("button", {
+      name: /Copy Blueprint Prompt/i,
+    });
     await expect(copyBtn).toBeVisible();
     await copyBtn.click();
 
     // Verify copied feedback
-    await expect(modal.getByText(/Copied Prompt!|Copied Blueprint!/i)).toBeVisible();
+    await expect(
+      modal.getByText(/Copied Prompt!|Copied Blueprint!/i),
+    ).toBeVisible();
 
     // 6. Close the modal
     const closeBtn = modal.getByRole("button", { name: "Close modal" });
@@ -56,10 +66,15 @@ test.describe("Graph Preview - View Step Blueprint Flow", () => {
     await blueprintBtn.click();
 
     await expect(modal).toBeVisible();
-    await expect(page.locator("#blueprint-modal-title")).toContainText("Supabase Schema & RLS");
+    await expect(page.locator("#blueprint-modal-title")).toContainText(
+      "Supabase Schema & RLS",
+    );
 
     // Close via Close button in footer
-    const footerCloseBtn = modal.getByRole("button", { name: "Close", exact: true });
+    const footerCloseBtn = modal.getByRole("button", {
+      name: "Close",
+      exact: true,
+    });
     await footerCloseBtn.click();
     await expect(modal).not.toBeVisible();
   });

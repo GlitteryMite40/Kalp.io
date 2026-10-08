@@ -805,10 +805,7 @@ export default function Home() {
 
         {/* 3. COMPLETED STATE: Generated Build Graph Display */}
         {pipelineState === "completed" && graphData && (
-          <section
-            id="build-graph"
-            className="py-12 md:py-16 scroll-mt-16"
-          >
+          <section id="build-graph" className="py-12 md:py-16 scroll-mt-16">
             <div id="graph-preview" className="sr-only" />
             <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
               {/* Project Header Banner */}

@@ -44,3 +44,21 @@ export class ForbiddenError extends ApiError {
     super(message, 403, "FORBIDDEN", details);
   }
 }
+
+export class ConflictError extends ApiError {
+  constructor(message = "Conflict", details?: unknown) {
+    super(message, 409, "CONFLICT", details);
+  }
+}
+
+export class TooManyRequestsError extends ApiError {
+  constructor(message = "Too many requests", details?: unknown) {
+    super(message, 429, "TOO_MANY_REQUESTS", details);
+  }
+}
+
+export class BadGatewayError extends ApiError {
+  constructor(message = "Bad gateway", details?: unknown) {
+    super(message, 502, "BAD_GATEWAY", details);
+  }
+}

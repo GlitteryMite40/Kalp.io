@@ -28,6 +28,12 @@ export const envSchema = z.object({
     }
     return val;
   }, z.string().min(1).optional()),
+  GITHUB_TOKEN: z.preprocess((val) => {
+    if (typeof val === "string" && val.trim() === "") {
+      return undefined;
+    }
+    return val;
+  }, z.string().min(1).optional()),
 });
 
 export type Env = z.infer<typeof envSchema>;
